@@ -154,6 +154,10 @@ class ImpactScorer:
                 published_at = datetime.fromisoformat(published_at)
             except (ValueError, TypeError):
                 return 0.0
+        
+        # Si published_at tiene timezone (aware), convertir a naive
+        if published_at.tzinfo is not None:
+            published_at = published_at.replace(tzinfo=None)
 
         ahora = datetime.utcnow()
         diff = ahora - published_at
