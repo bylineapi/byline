@@ -102,7 +102,7 @@ async def scraping_job(force_date: Optional[datetime] = None):
             # IMPORTANTE: Abrir sesión DESPUÉS del scraping para evitar timeout
             try:
                 async with get_session_maker() as db:
-                    for data in articulos_crudos:
+                    for idx, data in enumerate(articulos_crudos):
                         try:
                             logger.debug(
                                 "Procesando artículo: %s (source_id: %d)",
@@ -166,15 +166,26 @@ async def scraping_job(force_date: Optional[datetime] = None):
                                     "content": data["content"],
                                     "published_at": data.get("published_at"),
                                 })
+                            
+                            # Commit cada 5 artículos para evitar transacciones largas
+                            if (idx + 1) % 5 == 0:
+                                await db.commit()
+                                logger.debug("Checkpoint: commit parcial después de %d artículos", idx + 1)
 
                         except Exception as e:
                             logger.error(
                                 "Error procesando artículo de '%s': %s",
                                 fuente.name, e,
                             )
+                            # Rollback inmediato si hay error en un artículo
+                            try:
+                                await db.rollback()
+                                logger.debug("Rollback ejecutado después de error")
+                            except Exception as rb_error:
+                                logger.error("Error haciendo rollback: %s", rb_error)
                             continue
                     
-                    # Commit después de procesar todos los artículos de esta fuente
+                    # Commit final para artículos restantes
                     await db.commit()
                     logger.info(
                         "Fuente %s: %d artículos nuevos guardados",
@@ -185,11 +196,6 @@ async def scraping_job(force_date: Optional[datetime] = None):
                     "Error de base de datos para fuente '%s': %s",
                     fuente.name, db_error,
                 )
-                # Intentar rollback si la sesión aún es válida
-                try:
-                    await db.rollback()
-                except Exception:
-                    pass
                 continue
         
         except Exception as e:
