@@ -23,6 +23,9 @@ HTTP_TIMEOUT = 30
 # Para evitar ser bloqueado por los servidores fuente
 ARTICLE_DELAY_SECONDS = 15  # 15-20 segundos entre cada artículo
 
+# Número máximo de artículos a extraer por fuente
+MAX_ARTICLES_PER_SOURCE = 4
+
 # Confidence mínima para usar el profiler en vez de newspaper3k
 MIN_CONFIDENCE_FOR_PROFILER = 0.7
 
@@ -206,9 +209,13 @@ async def fetch_rss(source: Source, source_profile: Optional[dict] = None, force
             logger.warning("❌ No se encontraron entradas en RSS de %s", source.name)
             return articulos_crudos
         
-        logger.info("✅ RSS parseado: %d entradas encontradas", len(feed.entries))
+        logger.info("✅ RSS parseado: %d entradas encontradas (procesando solo las %d más recientes)", 
+                   len(feed.entries), MAX_ARTICLES_PER_SOURCE)
 
-        for idx, entry in enumerate(feed.entries):
+        # Limitar a los MAX_ARTICLES_PER_SOURCE artículos más recientes
+        entradas_a_procesar = feed.entries[:MAX_ARTICLES_PER_SOURCE]
+
+        for idx, entry in enumerate(entradas_a_procesar):
             original_url = entry.get("link", "").strip()
             if not original_url:
                 logger.debug("Entrada %d sin URL, saltando", idx + 1)
@@ -217,7 +224,7 @@ async def fetch_rss(source: Source, source_profile: Optional[dict] = None, force
             logger.info(
                 "📄 Procesando artículo %d/%d: %s",
                 idx + 1,
-                len(feed.entries),
+                len(entradas_a_procesar),
                 original_url[:80]
             )
 
@@ -285,12 +292,12 @@ async def fetch_rss(source: Source, source_profile: Optional[dict] = None, force
             logger.info(
                 "✅ Artículo %d/%d extraído: %s",
                 idx + 1,
-                len(feed.entries),
+                len(entradas_a_procesar),
                 title[:60]
             )
             
             # Delay entre artículos para evitar ser bloqueado
-            if idx < len(feed.entries) - 1:  # No delay en el último artículo
+            if idx < len(entradas_a_procesar) - 1:  # No delay en el último artículo
                 logger.info("⏳ Esperando %d segundos antes del siguiente artículo...", ARTICLE_DELAY_SECONDS)
                 await asyncio.sleep(ARTICLE_DELAY_SECONDS)
 
