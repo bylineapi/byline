@@ -44,14 +44,13 @@ class nwwp_Cron {
     }
 
     public function ejecutar_breaking_news() {
-        $api_url = get_option('nwwp_api_url', '');
         $api_key = get_option('nwwp_api_key', '');
 
-        if (empty($api_url) || empty($api_key)) {
+        if (empty($api_key)) {
             $this->registrar_log(
                 'breaking_news',
                 'error',
-                'No se puede ejecutar breaking news: API URL o API Key no configuradas'
+                'No se puede ejecutar breaking news: API Key no configurada'
             );
             return;
         }
@@ -100,14 +99,13 @@ class nwwp_Cron {
     }
 
     public function ejecutar_import_horaria() {
-        $api_url = get_option('nwwp_api_url', '');
         $api_key = get_option('nwwp_api_key', '');
 
-        if (empty($api_url) || empty($api_key)) {
+        if (empty($api_key)) {
             $this->registrar_log(
                 'hourly_import',
                 'error',
-                'No se puede ejecutar importación horaria: API URL o API Key no configuradas'
+                'No se puede ejecutar importación horaria: API Key no configurada'
             );
             return;
         }

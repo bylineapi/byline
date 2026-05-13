@@ -69,7 +69,7 @@ function nwwp_enviar_email_apikey($order_id, $api_key, $plan) {
 
     $email = $order->get_billing_email();
     $nombre = $order->get_billing_first_name();
-    $api_url = get_option('nwwp_api_url', '');
+    $api_url = NWWP_API_URL;
 
     if (empty($email)) {
         return;
@@ -205,7 +205,7 @@ function nwwp_pago_completado($order_id) {
         return;
     }
 
-    $api_url = get_option('nwwp_api_url', '');
+    $api_url = NWWP_API_URL;
     $owner_secret = get_option('nwwp_owner_secret', '');
 
     if (empty($api_url) || empty($owner_secret)) {
@@ -310,7 +310,7 @@ function nwwp_suscripcion_cancelada($subscription) {
         return;
     }
 
-    $api_url = get_option('nwwp_api_url', '');
+    $api_url = NWWP_API_URL;
     $owner_secret = get_option('nwwp_owner_secret', '');
 
     if (empty($api_url) || empty($owner_secret)) {
@@ -369,7 +369,7 @@ function nwwp_suscripcion_renovada($subscription) {
         return;
     }
 
-    $api_url = get_option('nwwp_api_url', '');
+    $api_url = NWWP_API_URL;
     $owner_secret = get_option('nwwp_owner_secret', '');
 
     if (empty($api_url) || empty($owner_secret)) {
@@ -438,7 +438,7 @@ function nwwp_plan_cambiado($subscription, $new_item, $old_item, $old_subscripti
         return;
     }
 
-    $api_url = get_option('nwwp_api_url', '');
+    $api_url = NWWP_API_URL;
     $owner_secret = get_option('nwwp_owner_secret', '');
 
     if (empty($api_url) || empty($owner_secret)) {

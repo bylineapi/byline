@@ -11,63 +11,170 @@ document.addEventListener('DOMContentLoaded', function() {
     // ============================================
     const verifyBtn = document.getElementById('nwwp-verify-btn');
     const verifyMsg = document.getElementById('nwwp-verify-msg');
+    const apiInfoDiv = document.getElementById('nwwp-api-info');
+    const connectionBar = document.querySelector('.nwwp-connection-bar');
     const connectionDot = document.querySelector('.nwwp-connection-dot');
     const connectionText = document.querySelector('.nwwp-connection-text');
+    const apiKeyInput = document.getElementById('nwwp_api_key');
+    const planBadge = document.querySelector('.nwwp-plan-badge-header');
+
+    // Función para verificar automáticamente la API Key
+    function autoVerifyApiKey() {
+        const apiKey = apiKeyInput ? apiKeyInput.value.trim() : '';
+        
+        if (!apiKey) {
+            updateConnectionStatus('disconnected');
+            return;
+        }
+        
+        // Ya está verificado según el estado actual del DOM
+        if (connectionBar && connectionBar.classList.contains('connected') && apiInfoDiv) {
+            return;
+        }
+        
+        // Mostrar estado pending temporalmente
+        updateConnectionStatus('pending');
+        
+        if (typeof wp !== 'undefined' && wp.ajax) {
+            wp.ajax.post('nwwp_verify_connection', {
+                api_key: apiKey,
+                nonce: nwwpAdmin ? nwwpAdmin.nonce : ''
+            }).done(function(response) {
+                if (response.success && response.data) {
+                    const plan = response.data.plan || 'basic';
+                    updateConnectionStatus('connected', plan);
+                    if (apiInfoDiv) {
+                        apiInfoDiv.style.display = 'flex';
+                    }
+                    if (planBadge) {
+                        planBadge.className = 'nwwp-plan-badge-header ' + plan;
+                        planBadge.textContent = plan.charAt(0).toUpperCase() + plan.slice(1);
+                    }
+                    unlockProFeatures(plan);
+                } else {
+                    updateConnectionStatus('pending');
+                }
+            }).fail(function() {
+                updateConnectionStatus('pending');
+            });
+        }
+    }
+
+    // Función para desbloquear características según el plan
+    function unlockProFeatures(plan) {
+        if (plan === 'basic') return;
+        
+        // Desbloquear Artículo completo
+        const contentFullRadio = document.getElementById('content_full');
+        if (contentFullRadio) {
+            contentFullRadio.disabled = false;
+            const fullCard = contentFullRadio.closest('.nwwp-radio-card');
+            if (fullCard) {
+                fullCard.classList.remove('locked');
+                fullCard.style.opacity = '1';
+                fullCard.style.cursor = 'pointer';
+            }
+        }
+        
+        // Desbloquear Resumen IA
+        const contentSummaryRadio = document.getElementById('content_summary');
+        if (contentSummaryRadio) {
+            contentSummaryRadio.disabled = false;
+            const summaryCard = contentSummaryRadio.closest('.nwwp-radio-card');
+            if (summaryCard) {
+                summaryCard.classList.remove('locked');
+                summaryCard.style.opacity = '1';
+                summaryCard.style.cursor = 'pointer';
+            }
+        }
+        
+        // Desbloquear Breaking news
+        const breakingCheckbox = document.getElementById('nwwp_breaking_enabled');
+        if (breakingCheckbox) {
+            breakingCheckbox.disabled = false;
+            const breakingLabel = breakingCheckbox.closest('.nwwp-toggle-label');
+            const breakingBadge = breakingLabel ? breakingLabel.querySelector('.nwwp-plan-badge') : null;
+            if (breakingBadge) {
+                breakingBadge.style.display = 'none';
+            }
+        }
+        
+        // Actualizar límite de posts por hora
+        const postsPerHourInput = document.getElementById('nwwp_posts_per_hour');
+        if (postsPerHourInput) {
+            postsPerHourInput.removeAttribute('readonly');
+            postsPerHourInput.style.background = '#fff';
+        }
+    }
+
+    // Ejecutar verificación automática al cargar la página
+    if (apiKeyInput && apiKeyInput.value.trim() !== '') {
+        // Usar el plan detectado desde PHP si está disponible
+        if (typeof nwwpAdmin !== 'undefined' && nwwpAdmin.detectedPlan && nwwpAdmin.detectedPlan !== 'basic') {
+            updateConnectionStatus('connected', nwwpAdmin.detectedPlan);
+            if (apiInfoDiv) {
+                apiInfoDiv.style.display = 'flex';
+            }
+            if (planBadge) {
+                planBadge.className = 'nwwp-plan-badge-header ' + nwwpAdmin.detectedPlan;
+                planBadge.textContent = nwwpAdmin.detectedPlan.charAt(0).toUpperCase() + nwwpAdmin.detectedPlan.slice(1);
+            }
+            unlockProFeatures(nwwpAdmin.detectedPlan);
+        } else {
+            // Verificar con la API si el plan es basic o no hay plan
+            autoVerifyApiKey();
+        }
+    }
 
     if (verifyBtn) {
         verifyBtn.addEventListener('click', function() {
-            // Obtener valores del formulario
-            const apiUrlInput = document.getElementById('nwwp_api_url');
             const apiKeyInput = document.getElementById('nwwp_api_key');
-            
-            const apiUrl = apiUrlInput ? apiUrlInput.value.trim() : '';
             const apiKey = apiKeyInput ? apiKeyInput.value.trim() : '';
             
-            // Validar que los campos no estén vacíos
-            if (!apiUrl || !apiKey) {
-                showVerifyMessage('error', 'La URL de la API y la API Key son obligatorias.');
+            if (!apiKey) {
+                showVerifyMessage('error', 'La API Key es obligatoria.');
                 return;
             }
             
-            // Guardar texto original del botón
             const originalText = verifyBtn.textContent;
             
-            // Mostrar estado de carga
             verifyBtn.textContent = 'Verificando...';
             verifyBtn.disabled = true;
             verifyMsg.textContent = '';
             verifyMsg.className = 'nwwp-verify-msg';
             
-            // Hacer petición AJAX a WordPress
-            // Usamos wp.ajax.post que es la forma nativa de WordPress
             if (typeof wp !== 'undefined' && wp.ajax) {
                 wp.ajax.post('nwwp_verify_connection', {
-                    api_url: apiUrl,
                     api_key: apiKey,
                     nonce: nwwpAdmin ? nwwpAdmin.nonce : ''
                 }).done(function(response) {
-                    // Éxito: mostrar punto verde y plan detectado
                     if (response.success && response.data) {
-                        showVerifyMessage('success', response.data.message || 'Conexión exitosa');
-                        updateConnectionStatus(true, response.data.plan || 'basic', apiUrl);
+                        showVerifyMessage('success', 'Conectado · Plan ' + (response.data.plan || 'Básico') + ' · ' + (response.data.sources || '0') + ' fuentes disponibles');
+                        updateConnectionStatus('connected', response.data.plan || 'basic');
+                        if (apiInfoDiv) {
+                            apiInfoDiv.style.display = 'flex';
+                        }
                     } else {
                         showVerifyMessage('error', response.data && response.data.message ? response.data.message : 'Error en la conexión');
-                        updateConnectionStatus(false);
+                        updateConnectionStatus('disconnected');
+                        if (apiInfoDiv) {
+                            apiInfoDiv.style.display = 'none';
+                        }
                     }
                 }).fail(function(response) {
-                    // Error: mostrar punto rojo
                     const errorMsg = response.responseJSON && response.responseJSON.data && response.responseJSON.data.message 
                         ? response.responseJSON.data.message 
-                        : 'Error de conexión';
+                        : 'API Key inválida. Verifica en byline.io/admin';
                     showVerifyMessage('error', errorMsg);
-                    updateConnectionStatus(false);
+                    updateConnectionStatus('disconnected');
+                    if (apiInfoDiv) {
+                        apiInfoDiv.style.display = 'none';
+                    }
                 }).always(function() {
-                    // Restaurar botón
                     verifyBtn.textContent = originalText;
                     verifyBtn.disabled = false;
                 });
             } else {
-                // Fallback si wp.ajax no está disponible
                 showVerifyMessage('error', 'WordPress AJAX no está disponible');
                 verifyBtn.textContent = originalText;
                 verifyBtn.disabled = false;
@@ -75,11 +182,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    /**
-     * Muestra el mensaje de verificación de conexión
-     * @param {string} type - 'success' o 'error'
-     * @param {string} message - Mensaje a mostrar
-     */
     function showVerifyMessage(type, message) {
         if (!verifyMsg) return;
         
@@ -87,23 +189,36 @@ document.addEventListener('DOMContentLoaded', function() {
         verifyMsg.className = 'nwwp-verify-msg ' + type;
     }
 
-    /**
-     * Actualiza el estado visual de conexión en la barra superior
-     * @param {boolean} connected - Si está conectado o no
-     * @param {string} plan - Plan detectado (opcional)
-     * @param {string} url - URL de la API (opcional)
-     */
-    function updateConnectionStatus(connected, plan, url) {
-        if (connectionDot) {
-            connectionDot.classList.remove('connected', 'disconnected');
-            connectionDot.classList.add(connected ? 'connected' : 'disconnected');
+    function updateConnectionStatus(status, plan) {
+        if (connectionBar) {
+            connectionBar.classList.remove('connected', 'pending', 'disconnected');
+            connectionBar.classList.add(status);
         }
         
-        if (connectionText && connected && url) {
-            const planLabel = plan ? plan.charAt(0).toUpperCase() + plan.slice(1) : '';
-            connectionText.innerHTML = '<strong>Conectado a Byline API (' + planLabel + ')</strong> — ' + url;
-        } else if (connectionText && !connected) {
-            connectionText.textContent = 'No conectado — Error en la verificación';
+        if (connectionDot) {
+            connectionDot.classList.remove('connected', 'pending', 'disconnected');
+            connectionDot.classList.add(status);
+        }
+        
+        if (connectionText) {
+            if (status === 'connected') {
+                const planLabel = plan ? plan.charAt(0).toUpperCase() + plan.slice(1) : 'Básico';
+                connectionText.innerHTML = '<strong>Conectado a Byline</strong> · Plan ' + planLabel + ' · Última sync: Nunca';
+            } else if (status === 'pending') {
+                connectionText.textContent = 'API Key ingresada — Haz clic en Verificar';
+            } else {
+                connectionText.textContent = 'Sin configurar — Ingresa tu API Key para comenzar';
+            }
+        }
+    }
+
+    // Verificar estado inicial
+    const apiKeyInput = document.getElementById('nwwp_api_key');
+    if (apiKeyInput && apiKeyInput.value.trim() !== '') {
+        if (connectionBar && connectionBar.classList.contains('connected')) {
+            if (apiInfoDiv) {
+                apiInfoDiv.style.display = 'flex';
+            }
         }
     }
 
@@ -224,56 +339,50 @@ document.addEventListener('DOMContentLoaded', function() {
     // ============================================
     // 4. ESTADO VISUAL DEL PLAN BÁSICO
     // ============================================
-    // Leer el plan desde el badge del header
-    const planBadge = document.querySelector('.nwwp-plan-badge-header');
+    // Leer el plan desde nwwpAdmin (pasado desde PHP)
     let currentPlan = 'basic';
 
-    if (planBadge) {
-        // El plan está en la clase del badge (basic, pro, business)
-        if (planBadge.classList.contains('pro')) {
-            currentPlan = 'pro';
-        } else if (planBadge.classList.contains('business')) {
-            currentPlan = 'business';
-        } else {
-            currentPlan = 'basic';
-        }
+    if (typeof nwwpAdmin !== 'undefined' && nwwpAdmin.detectedPlan) {
+        currentPlan = nwwpAdmin.detectedPlan;
     }
 
-    // Si el plan es basic, deshabilitar visualmente los elementos Pro
-    if (currentPlan === 'basic') {
-        // Deshabilitar radio buttons de "Artículo completo" y "Resumen IA"
+    // Si el plan NO es basic, desbloquear características Pro
+    if (currentPlan !== 'basic') {
+        // Desbloquear radio buttons de "Artículo completo" y "Resumen IA"
         const contentFullRadio = document.getElementById('content_full');
         const contentSummaryRadio = document.getElementById('content_summary');
         
         if (contentFullRadio) {
-            contentFullRadio.disabled = true;
-            // Buscar el contenedor padre para agregar clase visual
+            contentFullRadio.disabled = false;
             const fullCard = contentFullRadio.closest('.nwwp-radio-card');
             if (fullCard) {
-                fullCard.classList.add('locked');
-                fullCard.style.opacity = '0.6';
-                fullCard.style.cursor = 'not-allowed';
+                fullCard.classList.remove('locked');
+                fullCard.style.opacity = '1';
+                fullCard.style.cursor = 'pointer';
             }
         }
         
         if (contentSummaryRadio) {
-            contentSummaryRadio.disabled = true;
+            contentSummaryRadio.disabled = false;
             const summaryCard = contentSummaryRadio.closest('.nwwp-radio-card');
             if (summaryCard) {
-                summaryCard.classList.add('locked');
-                summaryCard.style.opacity = '0.6';
-                summaryCard.style.cursor = 'not-allowed';
+                summaryCard.classList.remove('locked');
+                summaryCard.style.opacity = '1';
+                summaryCard.style.cursor = 'pointer';
             }
         }
 
-        // Agregar clase 'locked' al toggle de breaking news
-        const breakingCheckbox = document.getElementById('nwwp_activar_breaking');
-        const breakingToggle = breakingCheckbox ? breakingCheckbox.closest('.nwwp-toggle') : null;
+        // Desbloquear toggle de breaking news
+        const breakingCheckbox = document.getElementById('nwwp_breaking_enabled');
+        if (breakingCheckbox) {
+            breakingCheckbox.disabled = false;
+        }
         
-        if (breakingToggle) {
-            breakingToggle.classList.add('locked');
-            breakingToggle.style.opacity = '0.6';
-            breakingToggle.style.cursor = 'not-allowed';
+        // Actualizar input de posts por hora
+        const postsPerHour = document.getElementById('nwwp_posts_per_hour');
+        if (postsPerHour) {
+            postsPerHour.removeAttribute('readonly');
+            postsPerHour.style.background = '#fff';
         }
     }
 
@@ -289,7 +398,6 @@ document.addEventListener('DOMContentLoaded', function() {
             e.preventDefault();
             
             // Recolectar datos del formulario
-            const apiUrl = document.getElementById('nwwp_api_url').value;
             const apiKey = document.getElementById('nwwp_api_key').value;
             
             // Obtener modo de contenido seleccionado
@@ -332,7 +440,6 @@ document.addEventListener('DOMContentLoaded', function() {
             if (typeof wp !== 'undefined' && wp.ajax) {
                 wp.ajax.post('nwwp_save_settings_ajax', {
                     nonce: nwwpAdmin ? nwwpAdmin.nonce : '',
-                    nwwp_api_url: apiUrl,
                     nwwp_api_key: apiKey,
                     nwwp_content_mode: contentMode,
                     nwwp_posts_per_hour: postsPerHour,

@@ -15,7 +15,6 @@ if (!defined('ABSPATH')) {
 // Obtener configuración actual
 $detected_plan = get_option('nwwp_detected_plan', 'basic');
 $plan_class    = sanitize_html_class($detected_plan);
-$api_url       = get_option('nwwp_api_url', '');
 $api_key       = get_option('nwwp_api_key', '');
 $content_mode  = get_option('nwwp_content_mode', 'excerpt');
 $posts_per_hour = get_option('nwwp_posts_per_hour', 5);
@@ -77,8 +76,8 @@ foreach ($wp_categories as $cat) {
     $wp_cats_by_id[$cat->term_id] = $cat->name;
 }
 
-// URL de API verificada (solo lectura si ya hay conexión)
-$api_verified = !empty($api_url) && !empty($api_key);
+// API verificada
+$api_verified = !empty($api_key);
 
 // Owner Secret y modo dueño
 $owner_secret = get_option('nwwp_owner_secret', '');
@@ -178,15 +177,25 @@ if ($woocommerce_active && $is_owner_mode) {
     </div>
 
     <!-- Barra de estado de conexión -->
-    <div class="nwwp-connection-bar">
+    <?php
+    $connection_class = 'disconnected';
+    $connection_text = 'Sin configurar — Ingresa tu API Key para comenzar';
+    
+    if (!empty($api_key)) {
+        if ($api_verified) {
+            $connection_class = 'connected';
+            $connection_text = '<strong>Conectado a Byline</strong> · Plan ' . ucfirst($detected_plan) . ' · Última sync: ' . $sync_text;
+        } else {
+            $connection_class = 'pending';
+            $connection_text = 'API Key ingresada — Haz clic en Verificar';
+        }
+    }
+    ?>
+    <div class="nwwp-connection-bar <?php echo $connection_class; ?>">
         <div class="nwwp-connection-status">
-            <span class="nwwp-connection-dot <?php echo $api_verified ? 'connected' : 'disconnected'; ?>"></span>
+            <span class="nwwp-connection-dot <?php echo $connection_class; ?>"></span>
             <span class="nwwp-connection-text">
-                <?php if ($api_verified) : ?>
-                    <strong>Conectado a Byline API</strong> — <?php echo esc_url($api_url); ?>
-                <?php else : ?>
-                    No conectado — Configura la API para comenzar
-                <?php endif; ?>
+                <?php echo $connection_text; ?>
             </span>
         </div>
         <div class="nwwp-sync-time">
@@ -203,7 +212,9 @@ if ($woocommerce_active && $is_owner_mode) {
         <!-- Sección 1: Conexión API -->
         <div class="nwwp-section">
             <div class="nwwp-section-header">
-                <div class="nwwp-section-icon blue">🔗</div>
+                <div class="nwwp-section-icon blue">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"></path><path d="M4 4a16 16 0 0 1 16 16"></path><circle cx="5" cy="19" r="1"></circle></svg>
+                </div>
                 <div class="nwwp-section-title">
                     <h2>Conexión API</h2>
                     <p>Configura la conexión con Byline API</p>
@@ -212,20 +223,7 @@ if ($woocommerce_active && $is_owner_mode) {
             <div class="nwwp-section-content">
                 <div class="nwwp-form-row">
                     <div class="nwwp-form-label">
-                        <label for="nwwp_api_url">URL de la API</label>
-                    </div>
-                    <div class="nwwp-form-input">
-                        <input type="url" 
-                               id="nwwp_api_url" 
-                               name="nwwp_api_url" 
-                               value="<?php echo esc_attr($api_url); ?>"
-                               placeholder="https://tu-api.onrender.com"
-                               <?php echo $api_verified ? 'readonly' : ''; ?> />
-                    </div>
-                </div>
-                <div class="nwwp-form-row">
-                    <div class="nwwp-form-label">
-                        <label for="nwwp_api_key">API Key</label>
+                        <label for="nwwp_api_key">Tu API Key</label>
                     </div>
                     <div class="nwwp-form-input">
                         <div class="nwwp-input-with-btn">
@@ -233,11 +231,17 @@ if ($woocommerce_active && $is_owner_mode) {
                                    id="nwwp_api_key" 
                                    name="nwwp_api_key" 
                                    value="<?php echo esc_attr($api_key); ?>"
-                                   autocomplete="new-password" />
+                                   placeholder="nwwp_••••••••••••••••"
+                                   autocomplete="new-password"
+                                   class="nwwp-api-key-input" />
                             <button type="button" id="nwwp-verify-btn">Verificar</button>
-                            <span id="nwwp-verify-msg" class="nwwp-verify-msg"></span>
                         </div>
-                        <p class="nwwp-form-hint">Obtén tu API Key en <a href="https://byline.io/admin" target="_blank">byline.io/admin</a></p>
+                        <span id="nwwp-verify-msg" class="nwwp-verify-msg"></span>
+                        <div id="nwwp-api-info" class="nwwp-api-info" style="display: none;">
+                            <span class="nwwp-dot-connected"></span>
+                            Conectado a <strong>Byline API</strong>
+                            <span class="nwwp-api-version">v1.0.0</span>
+                        </div>
                     </div>
                 </div>
 
@@ -258,6 +262,42 @@ if ($woocommerce_active && $is_owner_mode) {
                         <p class="nwwp-form-hint">El Owner Secret activa el modo Dueño. Consíguelo en el archivo .env de tu Byline API.</p>
                         <?php if ($is_owner_mode): ?>
                             <p class="nwwp-form-hint" style="color:#2e7d32;">✓ Modo Dueño activo</p>
+                            
+                            <div class="nwwp-create-client-form" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 6px; border: 1px solid #dcdcde;">
+                                <h4 style="margin: 0 0 12px 0; font-size: 14px; font-weight: 600; color: #1d2327;">Crear nuevo cliente</h4>
+                                <div class="nwwp-form-row" style="margin-bottom: 10px;">
+                                    <div class="nwwp-form-label" style="width: 100px;">
+                                        <label for="nwwp_client_name" style="font-size: 12px;">Nombre</label>
+                                    </div>
+                                    <div class="nwwp-form-input">
+                                        <input type="text" id="nwwp_client_name" placeholder="Nombre del cliente" style="padding: 6px 10px; font-size: 13px;" />
+                                    </div>
+                                </div>
+                                <div class="nwwp-form-row" style="margin-bottom: 10px;">
+                                    <div class="nwwp-form-label" style="width: 100px;">
+                                        <label for="nwwp_client_email" style="font-size: 12px;">Email</label>
+                                    </div>
+                                    <div class="nwwp-form-input">
+                                        <input type="email" id="nwwp_client_email" placeholder="email@ejemplo.com" style="padding: 6px 10px; font-size: 13px;" />
+                                    </div>
+                                </div>
+                                <div class="nwwp-form-row" style="margin-bottom: 10px;">
+                                    <div class="nwwp-form-label" style="width: 100px;">
+                                        <label for="nwwp_client_plan" style="font-size: 12px;">Plan</label>
+                                    </div>
+                                    <div class="nwwp-form-input">
+                                        <select id="nwwp_client_plan" style="padding: 6px 10px; font-size: 13px;">
+                                            <option value="basic">Básico</option>
+                                            <option value="pro">Pro</option>
+                                            <option value="business">Business</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <button type="button" id="nwwp-create-client-btn" class="button button-primary" style="font-size: 13px; padding: 6px 16px;">
+                                    Crear Cliente
+                                </button>
+                                <span id="nwwp-create-client-msg" class="nwwp-verify-msg" style="margin-left: 10px;"></span>
+                            </div>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -356,11 +396,14 @@ if ($woocommerce_active && $is_owner_mode) {
                                        <?php disabled('basic' === $detected_plan); ?> />
                                 <span class="nwwp-toggle-slider"></span>
                             </label>
+                            <?php if ('basic' === $detected_plan) : ?>
+                                <span class="nwwp-plan-badge">Solo Plan Pro</span>
+                            <?php endif; ?>
                             <span>Verificar noticias de último momento cada 5 min</span>
                         </div>
-                        <?php if ('basic' === $detected_plan) : ?>
-                            <p class="nwwp-toggle-note">Solo disponible en plan Pro</p>
-                        <?php endif; ?>
+                        <p class="nwwp-form-hint">
+                            Publica noticias urgentes en tiempo real, sin esperar el ciclo horario.
+                        </p>
                     </div>
                 </div>
 
@@ -614,7 +657,6 @@ if ($woocommerce_active && $is_owner_mode) {
             var formData = new FormData();
             formData.append('action', 'nwwp_save_settings_ajax');
             formData.append('nwwp_settings_nonce', nwwpAdmin.nonce);
-            formData.append('nwwp_api_url', document.getElementById('nwwp_api_url').value);
             formData.append('nwwp_api_key', document.getElementById('nwwp_api_key').value);
             
             var contentModeInputs = document.querySelectorAll('input[name="nwwp_content_mode"]');
@@ -758,16 +800,15 @@ if ($woocommerce_active && $is_owner_mode) {
 
     var verifyOwnerBtn = document.getElementById('nwwp-verify-owner-btn');
     var ownerSecretInput = document.getElementById('nwwp_owner_secret');
-    var apiUrlInput = document.getElementById('nwwp_api_url');
     var ownerMsg = document.getElementById('nwwp-verify-owner-msg');
+    var apiUrl = 'https://byline-dgpt.onrender.com';
 
-    if (verifyOwnerBtn && ownerSecretInput && apiUrlInput) {
+    if (verifyOwnerBtn && ownerSecretInput) {
         verifyOwnerBtn.addEventListener('click', function() {
-            var apiUrl = apiUrlInput.value.trim();
             var ownerSecret = ownerSecretInput.value.trim();
 
-            if (!apiUrl || !ownerSecret) {
-                ownerMsg.innerHTML = '<span style="color:#c62828;">Por favor, completa la URL y el Owner Secret.</span>';
+            if (!ownerSecret) {
+                ownerMsg.innerHTML = '<span style="color:#c62828;">Por favor, completa el Owner Secret.</span>';
                 return;
             }
 
@@ -802,6 +843,61 @@ if ($woocommerce_active && $is_owner_mode) {
             .finally(function() {
                 verifyOwnerBtn.disabled = false;
                 verifyOwnerBtn.textContent = 'Verificar';
+            });
+        });
+    }
+
+    // Crear cliente
+    var createClientBtn = document.getElementById('nwwp-create-client-btn');
+    var clientNameInput = document.getElementById('nwwp_client_name');
+    var clientEmailInput = document.getElementById('nwwp_client_email');
+    var clientPlanSelect = document.getElementById('nwwp_client_plan');
+    var clientMsg = document.getElementById('nwwp-create-client-msg');
+
+    if (createClientBtn && clientNameInput && clientEmailInput && clientPlanSelect) {
+        createClientBtn.addEventListener('click', function() {
+            var name = clientNameInput.value.trim();
+            var email = clientEmailInput.value.trim();
+            var plan = clientPlanSelect.value;
+
+            if (!name || !email) {
+                clientMsg.innerHTML = '<span style="color:#c62828;">El nombre y email son obligatorios.</span>';
+                return;
+            }
+
+            createClientBtn.disabled = true;
+            createClientBtn.textContent = 'Creando...';
+            clientMsg.innerHTML = '';
+
+            var formData = new FormData();
+            formData.append('action', 'nwwp_crear_cliente');
+            formData.append('nonce', nwwpAdmin.nonce);
+            formData.append('name', name);
+            formData.append('email', email);
+            formData.append('plan', plan);
+
+            fetch(nwwpAdmin.ajaxUrl, {
+                method: 'POST',
+                body: formData
+            })
+            .then(function(response) {
+                return response.json();
+            })
+            .then(function(data) {
+                if (data.success) {
+                    clientMsg.innerHTML = '<span style="color:#2e7d32;">Cliente creado exitosamente. API Key: ' + (data.data.client && data.data.client.api_key ? data.data.client.api_key : 'N/A') + '</span>';
+                    clientNameInput.value = '';
+                    clientEmailInput.value = '';
+                } else {
+                    clientMsg.innerHTML = '<span style="color:#c62828;">' + data.data.message + '</span>';
+                }
+            })
+            .catch(function() {
+                clientMsg.innerHTML = '<span style="color:#c62828;">Error de conexión.</span>';
+            })
+            .finally(function() {
+                createClientBtn.disabled = false;
+                createClientBtn.textContent = 'Crear Cliente';
             });
         });
     }

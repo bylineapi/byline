@@ -51,7 +51,7 @@ class NWWP_Email_ApiKey extends WC_Email {
         $this->replace['order-date'] = wc_format_datetime($order->get_date_created());
         $this->replace['plan'] = ucfirst($plan);
         $this->replace['api_key'] = $api_key;
-        $this->replace['api_url'] = get_option('nwwp_api_url', '');
+        $this->replace['api_url'] = NWWP_API_URL;
 
         if (!$this->is_enabled() || empty($this->recipient)) {
             return;

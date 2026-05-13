@@ -19,6 +19,7 @@ if (!defined('ABSPATH')) {
 define('nwwp_VERSION', '1.0.0');
 define('nwwp_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('nwwp_PLUGIN_URL', plugin_dir_url(__FILE__));
+define('NWWP_API_URL', 'https://byline-dgpt.onrender.com');
 
 // ─── Includes ───────────────────────────────────────────────────────────────
 

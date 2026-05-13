@@ -17,7 +17,7 @@ class nwwp_API_Client {
     private $api_key;
 
     public function __construct() {
-        $this->api_url = trailingslashit(get_option('nwwp_api_url', ''));
+        $this->api_url = trailingslashit(NWWP_API_URL);
         $this->api_key = get_option('nwwp_api_key', '');
     }
 

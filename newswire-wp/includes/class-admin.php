@@ -21,6 +21,7 @@ class nwwp_Admin {
         add_action('wp_ajax_nwwp_verify_connection', array($this, 'ajax_verificar_conexion'));
         add_action('wp_ajax_nwwp_verify_owner_secret', array($this, 'ajax_verificar_owner_secret'));
         add_action('wp_ajax_nwwp_save_settings_ajax', array($this, 'ajax_guardar_settings'));
+        add_action('wp_ajax_nwwp_crear_cliente', array($this, 'ajax_crear_cliente'));
         add_action('admin_enqueue_scripts', array($this, 'cargar_assets'));
         add_filter('plugin_action_links_' . plugin_basename(nwwp_PLUGIN_DIR . 'newswire-wp.php'), array($this, 'agregar_enlace_ajustes'));
     }
@@ -51,10 +52,6 @@ class nwwp_Admin {
     }
 
     public function registrar_configuracion() {
-        register_setting('nwwp_settings_group', 'nwwp_api_url', array(
-            'sanitize_callback' => 'esc_url_raw',
-        ));
-
         register_setting('nwwp_settings_group', 'nwwp_api_key', array(
             'sanitize_callback' => 'sanitize_text_field',
         ));
@@ -132,11 +129,11 @@ class nwwp_Admin {
             wp_send_json_error(array('message' => 'Sin permisos.'));
         }
 
-        $api_url = isset($_POST['api_url']) ? esc_url_raw($_POST['api_url']) : '';
+        $api_url = NWWP_API_URL;
         $owner_secret = isset($_POST['owner_secret']) ? sanitize_text_field($_POST['owner_secret']) : '';
 
-        if (empty($api_url) || empty($owner_secret)) {
-            wp_send_json_error(array('message' => 'URL de API y Owner Secret son obligatorios.'));
+        if (empty($owner_secret)) {
+            wp_send_json_error(array('message' => 'Owner Secret es obligatorio.'));
         }
 
         $health_url = trailingslashit($api_url) . 'health';
@@ -164,7 +161,6 @@ class nwwp_Admin {
         }
 
         update_option('nwwp_owner_secret', $owner_secret);
-        update_option('nwwp_api_url', $api_url);
 
         wp_send_json_success(array(
             'message' => 'Modo Dueño activado correctamente.',
@@ -221,50 +217,98 @@ class nwwp_Admin {
             wp_send_json_error(array('message' => __('Sin permisos.', 'newswire-wp')));
         }
 
-        $api_url = isset($_POST['api_url']) ? esc_url_raw($_POST['api_url']) : '';
+        $api_url = NWWP_API_URL;
         $api_key = isset($_POST['api_key']) ? sanitize_text_field($_POST['api_key']) : '';
+        $owner_secret = get_option('nwwp_owner_secret', '');
 
-        if (empty($api_url) || empty($api_key)) {
-            wp_send_json_error(array('message' => __('URL de API y API Key son obligatorias.', 'newswire-wp')));
+        if (empty($api_key)) {
+            wp_send_json_error(array('message' => __('API Key es obligatoria.', 'newswire-wp')));
         }
 
-        $health_url = trailingslashit($api_url) . 'health';
+        // Si hay Owner Secret, usar /admin/clients/verify para buscar el cliente por API Key
+        $detected_plan = 'basic';
+        $sources_count = 0;
 
-        $response = wp_remote_get($health_url, array(
-            'timeout' => 15,
-            'headers' => array(
-                'X-API-KEY' => $api_key,
-            ),
-            'sslverify' => true,
-        ));
-
-        if (is_wp_error($response)) {
-            wp_send_json_error(array(
-                'message' => __('No se pudo conectar: ', 'newswire-wp') . $response->get_error_message(),
+        if (!empty($owner_secret)) {
+            $verify_url = add_query_arg('api_key', $api_key, trailingslashit($api_url) . 'admin/clients/verify');
+            
+            $response = wp_remote_get($verify_url, array(
+                'timeout' => 15,
+                'headers' => array(
+                    'X-Admin-Secret' => $owner_secret,
+                ),
+                'sslverify' => true,
             ));
-        }
 
-        $status_code = wp_remote_retrieve_response_code($response);
+            if (!is_wp_error($response)) {
+                $status_code = wp_remote_retrieve_response_code($response);
+                if (200 === $status_code) {
+                    $body = wp_remote_retrieve_body($response);
+                    $data = json_decode($body, true);
+                    
+                    if (isset($data['plan'])) {
+                        $detected_plan = sanitize_text_field($data['plan']);
+                    }
+                }
+            }
+        } else {
+            // Sin Owner Secret, usar /health solo para verificar conectividad
+            $health_url = trailingslashit($api_url) . 'health';
 
-        if (200 !== $status_code) {
-            $body = wp_remote_retrieve_body($response);
-            $data = json_decode($body, true);
-            $msg  = isset($data['detail']) ? sanitize_text_field($data['detail']) : "Código HTTP: {$status_code}";
-
-            wp_send_json_error(array(
-                'message' => __('Error de autenticación: ', 'newswire-wp') . $msg,
+            $response = wp_remote_get($health_url, array(
+                'timeout' => 15,
+                'headers' => array(
+                    'X-API-KEY' => $api_key,
+                ),
+                'sslverify' => true,
             ));
+
+            if (is_wp_error($response)) {
+                wp_send_json_error(array(
+                    'message' => __('No se pudo conectar: ', 'newswire-wp') . $response->get_error_message(),
+                ));
+            }
+
+            $status_code = wp_remote_retrieve_response_code($response);
+            if (200 !== $status_code) {
+                $body = wp_remote_retrieve_body($response);
+                $result_data = json_decode($body, true);
+                $msg = isset($result_data['detail']) ? sanitize_text_field($result_data['detail']) : "Código HTTP: {$status_code}";
+                wp_send_json_error(array(
+                    'message' => __('API Key inválida: ', 'newswire-wp') . $msg,
+                ));
+            }
         }
 
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-
-        $detected_plan = isset($data['plan']) ? sanitize_text_field($data['plan']) : 'basic';
+        // Validar que el plan sea válido
         if (!in_array($detected_plan, array('basic', 'pro', 'business'), true)) {
             $detected_plan = 'basic';
         }
 
         update_option('nwwp_detected_plan', $detected_plan, true);
+
+        // Obtener fuentes disponibles
+        $sources_count = 0;
+        $sources_url = trailingslashit($api_url) . 'admin/sources';
+        if (!empty($owner_secret)) {
+            $sources_response = wp_remote_get($sources_url, array(
+                'timeout' => 15,
+                'headers' => array(
+                    'X-Admin-Secret' => $owner_secret,
+                ),
+                'sslverify' => true,
+            ));
+            if (!is_wp_error($sources_response)) {
+                $sources_status = wp_remote_retrieve_response_code($sources_response);
+                if (200 === $sources_status) {
+                    $sources_body = wp_remote_retrieve_body($sources_response);
+                    $sources_data = json_decode($sources_body, true);
+                    if (is_array($sources_data)) {
+                        $sources_count = count($sources_data);
+                    }
+                }
+            }
+        }
 
         $plan_labels = array(
             'basic'    => __('Básico', 'newswire-wp'),
@@ -274,9 +318,10 @@ class nwwp_Admin {
         $plan_label = isset($plan_labels[$detected_plan]) ? $plan_labels[$detected_plan] : $detected_plan;
 
         wp_send_json_success(array(
-            'success' => true,
-            'plan'    => $detected_plan,
-            'message' => sprintf(__('Conexión exitosa. Plan detectado: %s.', 'newswire-wp'), $plan_label),
+            'success'  => true,
+            'plan'     => $detected_plan,
+            'sources'  => $sources_count,
+            'message'  => sprintf(__('Conexión exitosa. Plan detectado: %s.', 'newswire-wp'), $plan_label),
         ));
     }
 
@@ -288,9 +333,6 @@ class nwwp_Admin {
         }
 
         // Guardar cada opción
-        if (isset($_POST['nwwp_api_url'])) {
-            update_option('nwwp_api_url', esc_url_raw($_POST['nwwp_api_url']));
-        }
         if (isset($_POST['nwwp_api_key'])) {
             update_option('nwwp_api_key', sanitize_text_field($_POST['nwwp_api_key']));
         }
@@ -366,9 +408,12 @@ class nwwp_Admin {
             true
         );
 
+        $detected_plan = get_option('nwwp_detected_plan', 'basic');
+        
         wp_localize_script('nwwp-admin-js', 'nwwpAdmin', array(
             'ajaxUrl' => admin_url('admin-ajax.php'),
             'nonce'   => wp_create_nonce('nwwp_verify_connection_nonce'),
+            'detectedPlan' => $detected_plan,
         ));
     }
 
@@ -382,25 +427,97 @@ class nwwp_Admin {
 
 function nwwp_es_modo_dueno() {
     $owner_secret = get_option('nwwp_owner_secret', '');
-    $api_url = get_option('nwwp_api_url', '');
 
-    if (empty($owner_secret) || empty($api_url)) {
+    if (empty($owner_secret)) {
         return false;
     }
 
-    $health_url = trailingslashit($api_url) . 'health';
+$health_url = trailingslashit(NWWP_API_URL) . 'health';
 
-    $response = wp_remote_get($health_url, array(
-        'timeout' => 10,
-        'headers' => array(
-            'X-Admin-Secret' => $owner_secret,
-        ),
-        'sslverify' => true,
-    ));
+        $response = wp_remote_get($health_url, array(
+            'timeout' => 10,
+            'headers' => array(
+                'X-Admin-Secret' => $owner_secret,
+            ),
+            'sslverify' => true,
+        ));
 
-    if (is_wp_error($response)) {
-        return false;
+        if (is_wp_error($response)) {
+            return false;
+        }
+
+        $status_code = wp_remote_retrieve_response_code($response);
+
+        return 200 === $status_code;
     }
+
+    public function ajax_crear_cliente() {
+        check_ajax_referer('nwwp_verify_connection_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => __('Sin permisos.', 'newswire-wp')));
+        }
+
+        $owner_secret = get_option('nwwp_owner_secret', '');
+        
+        if (empty($owner_secret)) {
+            wp_send_json_error(array('message' => __('Owner Secret no configurado.', 'newswire-wp')));
+        }
+
+        $name = isset($_POST['name']) ? sanitize_text_field($_POST['name']) : '';
+        $email = isset($_POST['email']) ? sanitize_email($_POST['email']) : '';
+        $plan = isset($_POST['plan']) ? sanitize_text_field($_POST['plan']) : 'basic';
+
+        if (empty($name) || empty($email)) {
+            wp_send_json_error(array('message' => __('Nombre y email son obligatorios.', 'newswire-wp')));
+        }
+
+        if (!in_array($plan, array('basic', 'pro', 'business'), true)) {
+            $plan = 'basic';
+        }
+
+        $api_url = NWWP_API_URL;
+        $endpoint = trailingslashit($api_url) . 'admin/clients';
+
+        $response = wp_remote_post(
+            $endpoint,
+            array(
+                'timeout' => 30,
+                'headers' => array(
+                    'X-Admin-Secret' => $owner_secret,
+                    'Content-Type' => 'application/json',
+                ),
+                'body' => wp_json_encode(array(
+                    'name' => $name,
+                    'email' => $email,
+                    'plan' => $plan,
+                )),
+                'sslverify' => true,
+            )
+        );
+
+        if (is_wp_error($response)) {
+            wp_send_json_error(array('message' => __('Error de conexión: ', 'newswire-wp') . $response->get_error_message()));
+        }
+
+        $status_code = wp_remote_retrieve_response_code($response);
+
+        if (200 !== $status_code && 201 !== $status_code) {
+            $body = wp_remote_retrieve_body($response);
+            $data = json_decode($body, true);
+            $msg = isset($data['detail']) ? sanitize_text_field($data['detail']) : "Código HTTP: {$status_code}";
+            wp_send_json_error(array('message' => __('Error al crear cliente: ', 'newswire-wp') . $msg));
+        }
+
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+
+        wp_send_json_success(array(
+            'message' => __('Cliente creado exitosamente.', 'newswire-wp'),
+            'client' => $data,
+        ));
+    }
+}
 
     $status_code = wp_remote_retrieve_response_code($response);
 

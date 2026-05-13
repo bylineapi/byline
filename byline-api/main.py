@@ -155,8 +155,33 @@ async def list_clients(
             is_active=c.is_active,
             created_at=c.created_at,
         )
-for c in clients
+    for c in clients
     ]
+
+
+@app.get("/admin/clients/verify", response_model=ClientList)
+async def verify_client(
+    api_key: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(verify_admin_secret),
+):
+    """Verifica el plan de un cliente por su API Key."""
+    from auth import verify_api_key
+
+    result = await db.execute(select(Client))
+    clients = result.scalars().all()
+
+    for client in clients:
+        if verify_api_key(api_key, client.api_key):
+            return ClientList(
+                id=client.id,
+                name=client.name,
+                plan=client.plan.value,
+                is_active=client.is_active,
+                created_at=client.created_at,
+            )
+
+    raise HTTPException(status_code=404, detail="Cliente no encontrado")
 
 
 @app.patch("/admin/clients/{client_id}", response_model=ClientUpdateOut)

@@ -23,14 +23,11 @@
             verifyBtn.addEventListener('click', function(e) {
                 e.preventDefault();
 
-                var apiUrlInput = document.getElementById('nwwp_api_url');
                 var apiKeyInput = document.getElementById('nwwp_api_key');
-
-                var apiUrl = apiUrlInput ? apiUrlInput.value.trim() : '';
                 var apiKey = apiKeyInput ? apiKeyInput.value.trim() : '';
 
-                if (!apiUrl || !apiKey) {
-                    msgBox.innerHTML = '<span style="color:#c62828;">Por favor, completa la URL y la API Key.</span>';
+                if (!apiKey) {
+                    msgBox.innerHTML = '<span style="color:#c62828;">Por favor, completa la API Key.</span>';
                     return;
                 }
 
@@ -42,7 +39,6 @@
                 var formData = new FormData();
                 formData.append('action', 'nwwp_verify_connection');
                 formData.append('nonce', typeof nwwpAdmin !== 'undefined' ? nwwpAdmin.nonce : '');
-                formData.append('api_url', apiUrl);
                 formData.append('api_key', apiKey);
 
                 fetch(nwwpAdmin.ajaxUrl, {
