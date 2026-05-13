@@ -205,6 +205,39 @@ async def update_client(
     )
 
 
+@app.patch("/me", response_model=ClientUpdateOut)
+async def update_me(
+    data: ClientUpdate,
+    client: Client = Depends(get_current_client),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Actualiza el perfil del cliente autenticado.
+    Solo puede actualizar name y plan (no is_active).
+    """
+    if data.name is not None:
+        client.name = data.name
+
+    if data.plan is not None:
+        if data.plan not in ["basic", "pro", "business"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Plan inválido. Debe ser: basic, pro o business"
+            )
+        client.plan = PlanEnum(data.plan)
+
+    await db.commit()
+    await db.refresh(client)
+
+    return ClientUpdateOut(
+        id=client.id,
+        name=client.name,
+        plan=client.plan.value,
+        is_active=client.is_active,
+        created_at=client.created_at,
+    )
+
+
 # ─── Admin: Fuentes RSS (continuación) ───────────────────────────────────────
 
 profiler = HTMLProfiler()
