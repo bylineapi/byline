@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Byline Admin - Source Profiler</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f1f5f9;
+            color: #1e293b;
+            line-height: 1.6;
+        }
+        .header {
+            background: linear-gradient(135deg, #1e3a5f, #2d5a87);
+            color: white;
+            padding: 24px 32px;
+        }
+        .header h1 { font-size: 24px; font-weight: 600; }
+        .header p { opacity: 0.85; font-size: 14px; margin-top: 4px; }
+        .container {
+            max-width: 1000px;
+            margin: 32px auto;
+            padding: 0 16px;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .card h2 {
+            font-size: 18px;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #e2e8f0;
+            margin-bottom: 24px;
+        }
+        .tab {
+            padding: 12px 24px;
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-size: 14px;
+            font-weight: 500;
+            color: #64748b;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.2s;
+        }
+        .tab:hover { color: #2d5a87; }
+        .tab.active {
+            color: #2d5a87;
+            border-bottom-color: #2d5a87;
+        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .form-group { margin-bottom: 16px; }
+        .form-group label {
+            display: block;
+            font-weight: 500;
+            margin-bottom: 6px;
+            color: #334155;
+        }
+        .form-group input[type="text"],
+        .form-group input[type="url"],
+        .form-group textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #2d5a87;
+        }
+        .form-group textarea {
+            font-family: 'Consolas', 'Monaco', monospace;
+            min-height: 300px;
+            resize: vertical;
+        }
+        .form-group .hint {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 4px;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: #2d5a87;
+            color: white;
+        }
+        .btn-primary:hover { background: #1e3a5f; }
+        .btn-primary:disabled { background: #94a3b8; cursor: not-allowed; }
+        .btn-secondary {
+            background: #e2e8f0;
+            color: #334155;
+        }
+        .btn-secondary:hover { background: #cbd5e1; }
+        .result-box {
+            margin-top: 24px;
+            display: none;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .result-box.visible { display: block; }
+        .confidence-bar {
+            height: 24px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 12px 0;
+        }
+        .confidence-fill {
+            height: 100%;
+            transition: width 0.5s ease, background-color 0.3s;
+        }
+        .confidence-high { background: #22c55e; }
+        .confidence-medium { background: #f59e0b; }
+        .confidence-low { background: #ef4444; }
+        .selectors-grid {
+            display: grid;
+            grid-template-columns: 140px 1fr;
+            gap: 8px;
+            margin: 16px 0;
+            font-size: 13px;
+        }
+        .selectors-grid .key {
+            background: #f1f5f9;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-weight: 500;
+            color: #475569;
+        }
+        .selectors-grid .value {
+            padding: 8px 12px;
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            font-family: monospace;
+            word-break: break-all;
+        }
+        .sample-preview {
+            background: #f8fafc;
+            padding: 16px;
+            border-radius: 6px;
+            margin-top: 16px;
+        }
+        .sample-preview h4 {
+            font-size: 14px;
+            color: #64748b;
+            margin-bottom: 8px;
+        }
+        .sample-preview .title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1e293b;
+            margin-bottom: 8px;
+        }
+        .sample-preview .meta {
+            font-size: 12px;
+            color: #64748b;
+        }
+        .sample-preview .meta span { margin-right: 16px; }
+        .alert {
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-top: 12px;
+            font-size: 14px;
+        }
+        .alert-warning {
+            background: #fef3c7;
+            border: 1px solid #f59e0b;
+            color: #92400e;
+        }
+        .alert-success {
+            background: #dcfce7;
+            border: 1px solid #22c55e;
+            color: #166534;
+        }
+        .alert-error {
+            background: #fee2e2;
+            border: 1px solid #ef4444;
+            color: #991b1b;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 24px;
+        }
+        .loading.visible { display: block; }
+        .spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid #e2e8f0;
+            border-top-color: #2d5a87;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 12px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .sources-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+        .sources-table th, .sources-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .sources-table th {
+            background: #f8fafc;
+            font-weight: 600;
+            color: #475569;
+        }
+        .sources-table tr:hover { background: #f8fafc; }
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .badge-high { background: #dcfce7; color: #166534; }
+        .badge-medium { background: #fef3c7; color: #92400e; }
+        .badge-low { background: #fee2e2; color: #991b1b; }
+        .actions { display: flex; gap: 8px; }
+        .actions button {
+            padding: 4px 12px;
+            font-size: 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            background: white;
+            cursor: pointer;
+        }
+        .actions button:hover { background: #f1f5f9; }
+        .sources-list { margin-top: 16px; }
+        .empty-state {
+            text-align: center;
+            padding: 32px;
+            color: #64748b;
+        }
+        #admin_secret {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            margin-bottom: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Byline Admin - Source Profiler</h1>
+        <p>Sistema de detección automática de selectores CSS para scraping de noticias</p>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <h2>Autenticación</h2>
+            <input type="password" id="admin_secret" placeholder="Admin Secret">
+        </div>
+
+        <div class="card">
+            <h2>Agregar Fuente</h2>
+
+            <div class="tabs">
+                <button class="tab active" data-tab="tab-rss">Con RSS</button>
+                <button class="tab" data-tab="tab-html">Con HTML</button>
+            </div>
+
+            <!-- Tab RSS -->
+            <div id="tab-rss" class="tab-content active">
+                <div class="form-group">
+                    <label for="rss_name">Nombre de la fuente</label>
+                    <input type="text" id="rss_name" placeholder="ej: El País">
+                </div>
+                <div class="form-group">
+                    <label for="rss_url">URL del RSS</label>
+                    <input type="url" id="rss_url" placeholder="https://feeds.elpais.com/...">
+                </div>
+                <div class="form-group">
+                    <label for="rss_category">Categoría (opcional)</label>
+                    <input type="text" id="rss_category" placeholder="ej: tecnologia">
+                </div>
+                <button class="btn btn-primary" id="btn-add-rss">Agregar fuente RSS</button>
+                <div id="rss-result" class="result-box"></div>
+            </div>
+
+            <!-- Tab HTML -->
+            <div id="tab-html" class="tab-content">
+                <div class="form-group">
+                    <label for="html_source_name">Nombre de la fuente</label>
+                    <input type="text" id="html_source_name" placeholder="ej: BBC News">
+                </div>
+                <div class="form-group">
+                    <label for="html_source_url">URL principal de la fuente</label>
+                    <input type="url" id="html_source_url" placeholder="https://www.bbc.com">
+                    <p class="hint">URL de la página principal de la fuente (no de un artículo específico)</p>
+                </div>
+                <div class="form-group">
+                    <label for="html_category">Categoría (opcional)</label>
+                    <input type="text" id="html_category" placeholder="ej: internacional">
+                </div>
+                <div class="form-group">
+                    <label for="html_code">Código HTML del artículo</label>
+                    <textarea id="html_code" placeholder="Pega aquí el código HTML de un artículo..."></textarea>
+                    <p class="hint">
+                        Abre cualquier artículo de esa fuente en tu navegador,
+                        presiona Ctrl+U (o Cmd+Option+U en Mac) para ver el código fuente,
+                        selecciona todo (Ctrl+A), cópialo (Ctrl+C) y pégalo aquí.
+                    </p>
+                </div>
+                <button class="btn btn-primary" id="btn-analyze-html">Analizar y guardar fuente</button>
+
+                <div id="html-loading" class="loading">
+                    <div class="spinner"></div>
+                    <p>Analizando HTML...</p>
+                </div>
+
+                <div id="html-result" class="result-box"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Fuentes configuradas</h2>
+            <div class="sources-list" id="sources-list">
+                <div class="empty-state">Cargando fuentes...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+
+        function getSecret() {
+            return document.getElementById('admin_secret').value;
+        }
+
+        function headers() {
+            return {
+                'Content-Type': 'application/json',
+                'X-Admin-Secret': getSecret()
+            };
+        }
+
+        // Tabs
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById(tab.dataset.tab).classList.add('active');
+            });
+        });
+
+        // Agregar fuente RSS
+        document.getElementById('btn-add-rss').addEventListener('click', async () => {
+            const name = document.getElementById('rss_name').value.trim();
+            const rssUrl = document.getElementById('rss_url').value.trim();
+            const category = document.getElementById('rss_category').value.trim();
+
+            if (!name || !rssUrl) {
+                showResult('rss-result', 'error', 'Nombre y URL RSS son obligatorios.');
+                return;
+            }
+
+            try {
+                const res = await fetch(API_BASE + '/admin/sources', {
+                    method: 'POST',
+                    headers: headers(),
+                    body: JSON.stringify({ name, rss_url: rssUrl, category: category || null })
+                });
+
+                if (!res.ok) throw new Error((await res.json()).detail || 'Error');
+
+                showResult('rss-result', 'success', `Fuente "${name}" agregada correctamente.`);
+                document.getElementById('rss_name').value = '';
+                document.getElementById('rss_url').value = '';
+                document.getElementById('rss_category').value = '';
+                loadSources();
+            } catch (e) {
+                showResult('rss-result', 'error', e.message);
+            }
+        });
+
+        // Analizar HTML
+        document.getElementById('btn-analyze-html').addEventListener('click', async () => {
+            const sourceName = document.getElementById('html_source_name').value.trim();
+            const sourceUrl = document.getElementById('html_source_url').value.trim();
+            const category = document.getElementById('html_category').value.trim();
+            const htmlCode = document.getElementById('html_code').value.trim();
+
+            if (!sourceName || !sourceUrl || htmlCode.length < 100) {
+                showResult('html-result', 'error',
+                    'Completa el nombre, URL de la fuente y pega código HTML (mínimo 100 caracteres).');
+                return;
+            }
+
+            document.getElementById('html-loading').classList.add('visible');
+            document.getElementById('html-result').classList.remove('visible');
+
+            try {
+                const res = await fetch(API_BASE + '/admin/sources/analyze-html', {
+                    method: 'POST',
+                    headers: headers(),
+                    body: JSON.stringify({
+                        html: htmlCode,
+                        source_url: sourceUrl,
+                        source_name: sourceName,
+                        category: category || null
+                    })
+                });
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || 'Error en el análisis');
+                }
+
+                const data = await res.json();
+                showAnalyzeResult(data);
+            } catch (e) {
+                showResult('html-result', 'error', e.message);
+            } finally {
+                document.getElementById('html-loading').classList.remove('visible');
+            }
+        });
+
+        function showAnalyzeResult(data) {
+            const box = document.getElementById('html-result');
+            box.classList.add('visible');
+
+            const confidence = data.confidence_score;
+            let confClass = 'confidence-low';
+            let confLabel = 'Baja';
+            if (confidence >= 0.8) { confClass = 'confidence-high'; confLabel = 'Alta'; }
+            else if (confidence >= 0.7) { confClass = 'confidence-medium'; confLabel = 'Media'; }
+
+            let warningHtml = '';
+            if (data.warning) {
+                warningHtml = `<div class="alert alert-warning">${data.warning}</div>`;
+            }
+
+            let successHtml = '';
+            if (data.source_id) {
+                successHtml = `<div class="alert alert-success">
+                    Fuente guardada correctamente (ID: ${data.source_id})
+                </div>`;
+            }
+
+            box.innerHTML = `
+                <div style="padding: 16px;">
+                    <h3 style="margin-bottom: 12px;">Resultado del análisis</h3>
+
+                    <div style="margin-bottom: 16px;">
+                        <label style="font-weight: 500;">Confianza del perfil</label>
+                        <div class="confidence-bar">
+                            <div class="confidence-fill ${confClass}" style="width: ${(confidence * 100).toFixed(0)}%"></div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #64748b;">
+                            <span>${(confidence * 100).toFixed(0)}% - ${confLabel}</span>
+                            <span>Umbral para guardado automático: 70%</span>
+                        </div>
+                    </div>
+
+                    ${warningHtml}
+                    ${successHtml}
+
+                    <div class="selectors-grid">
+                        <div class="key">title_selector</div>
+                        <div class="value">${data.title_selector || '—'}</div>
+
+                        <div class="key">body_selector</div>
+                        <div class="value">${data.body_selector || '—'}</div>
+
+                        <div class="key">image_selector</div>
+                        <div class="value">${data.image_selector || '—'}</div>
+
+                        <div class="key">date_selector</div>
+                        <div class="value">${data.date_selector || '—'}</div>
+
+                        <div class="key">author_selector</div>
+                        <div class="value">${data.author_selector || '—'}</div>
+                    </div>
+
+                    ${data.sample_extraction && (data.sample_extraction.title || data.sample_extraction.image_url) ? `
+                    <div class="sample-preview">
+                        <h4>Vista previa de la extracción</h4>
+                        ${data.sample_extraction.title ? `<div class="title">${data.sample_extraction.title}</div>` : ''}
+                        <div class="meta">
+                            ${data.sample_extraction.date ? `<span>📅 ${data.sample_extraction.date}</span>` : ''}
+                            ${data.sample_extraction.image_url ? `<span>🖼 Imagen detectada</span>` : ''}
+                        </div>
+                    </div>
+                    ` : ''}
+                </div>
+            `;
+
+            loadSources();
+        }
+
+        function showResult(boxId, type, message) {
+            const box = document.getElementById(boxId);
+            box.classList.add('visible');
+            const cls = type === 'error' ? 'alert-error' : (type === 'success' ? 'alert-success' : 'alert-warning');
+            box.innerHTML = `<div class="alert ${cls}">${message}</div>`;
+        }
+
+        // Cargar fuentes
+        async function loadSources() {
+            const list = document.getElementById('sources-list');
+            try {
+                const res = await fetch(API_BASE + '/admin/sources', {
+                    headers: headers()
+                });
+                if (!res.ok) throw new Error();
+
+                const sources = await res.json();
+                if (!sources.length) {
+                    list.innerHTML = '<div class="empty-state">No hay fuentes configuradas aún.</div>';
+                    return;
+                }
+
+                // Cargar perfiles para cada fuente
+                const sourcesWithProfiles = await Promise.all(sources.map(async (s) => {
+                    try {
+                        const res = await fetch(API_BASE + '/admin/sources/' + s.id + '/profile', {
+                            headers: headers()
+                        });
+                        if (res.ok) {
+                            s.profile = await res.json();
+                        }
+                    } catch {}
+                    return s;
+                }));
+
+                list.innerHTML = `
+                    <table class="sources-table">
+                        <thead>
+                            <tr>
+                                <th>Nombre</th>
+                                <th>URL</th>
+                                <th>Categoría</th>
+                                <th>Confianza</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${sourcesWithProfiles.map(s => {
+                                const conf = s.profile ? s.profile.confidence_score : 0;
+                                let badge = '';
+                                let badgeClass = 'badge-low';
+                                if (conf >= 0.8) badgeClass = 'badge-high';
+                                else if (conf >= 0.7) badgeClass = 'badge-medium';
+                                if (s.profile) badge = `<span class="badge ${badgeClass}">${(conf * 100).toFixed(0)}%</span>`;
+
+                                return `
+                                    <tr>
+                                        <td>${s.name}</td>
+                                        <td><a href="${s.url || s.rss_url}" target="_blank">${s.url || s.rss_url}</a></td>
+                                        <td>${s.category || '—'}</td>
+                                        <td>${badge || 'Sin perfil'}</td>
+                                        <td class="actions">
+                                            ${s.profile ? `
+                                                <button onclick="verifyProfile(${s.id})">Verificar</button>
+                                            ` : ''}
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                `;
+            } catch (e) {
+                list.innerHTML = '<div class="empty-state">Error cargando fuentes.</div>';
+            }
+        }
+
+        // Verificar perfil
+        async function verifyProfile(sourceId) {
+            try {
+                const res = await fetch(API_BASE + '/admin/sources/' + sourceId + '/verify-profile', {
+                    method: 'POST',
+                    headers: headers()
+                });
+                if (!res.ok) throw new Error();
+                const data = await res.json();
+                alert(data.success
+                    ? `✓ Perfil verificado: "${data.title}"\n${data.message}`
+                    : `✗ Verificación fallida: ${data.message}`);
+            } catch (e) {
+                alert('Error verificando el perfil.');
+            }
+        }
+
+        // Cargar fuentes al inicio
+        loadSources();
+    </script>
+</body>
+</html>

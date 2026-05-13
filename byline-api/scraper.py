@@ -1,0 +1,256 @@
+# scraper.py - Motor de scraping RSS para obtener artículos de fuentes externas
+
+import asyncio
+import logging
+import re
+from datetime import datetime
+from typing import Optional
+
+import feedparser
+import requests
+from bs4 import BeautifulSoup
+from newspaper import Article as NewspaperArticle
+
+from models import Source
+from profiler import HTMLProfiler
+
+logger = logging.getLogger(__name__)
+
+# Timeout para requests externas
+HTTP_TIMEOUT = 30
+
+# Confidence mínima para usar el profiler en vez de newspaper3k
+MIN_CONFIDENCE_FOR_PROFILER = 0.7
+
+# Instancia global del profiler
+_profiler = HTMLProfiler()
+
+
+def _extraer_con_newspaper(url: str) -> dict:
+    """Extrae título, contenido, imagen y fecha usando newspaper3k (bloqueante)."""
+    resultado = {
+        "title": None,
+        "content": None,
+        "image_url": None,
+        "published_at": None,
+    }
+    try:
+        article = NewspaperArticle(url, language="es")
+        article.download()
+        article.parse()
+        resultado["title"] = article.title
+        resultado["content"] = article.text
+        resultado["image_url"] = article.top_image
+        if article.publish_date:
+            resultado["published_at"] = article.publish_date
+    except Exception as e:
+        logger.warning("newspaper3k falló para %s: %s", url, e)
+    return resultado
+
+
+def _extraer_con_profiler(url: str, profile: dict) -> dict:
+    """
+    Extrae título, contenido, imagen y fecha usando el Source Profiler.
+    Retorna None si la extracción falla.
+    """
+    try:
+        resultado = _profiler.extract(url, profile)
+        if resultado.get("title") and resultado.get("body"):
+            return {
+                "title": resultado.get("title"),
+                "content": resultado.get("body"),
+                "image_url": resultado.get("image_url"),
+                "published_at": _parsear_fecha_str(resultado.get("date")),
+            }
+    except Exception as e:
+        logger.warning("Profiler falló para %s: %s", url, e)
+    return None
+
+
+def _parsear_fecha_str(fecha_str: Optional[str]) -> Optional[datetime]:
+    """Parsea una fecha en formato string a datetime."""
+    if not fecha_str:
+        return None
+    formatos = [
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M:%SZ",
+        "%Y-%m-%dT%H:%M:%S.%f",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d",
+    ]
+    for fmt in formatos:
+        try:
+            return datetime.strptime(fecha_str[:19], fmt)
+        except (ValueError, IndexError):
+            continue
+    return None
+
+
+def _extraer_og_image(url: str) -> Optional[str]:
+    """Fallback: extrae og:image del HTML con BeautifulSoup (bloqueante)."""
+    try:
+        resp = requests.get(url, timeout=HTTP_TIMEOUT, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; NewsBot/1.0)"
+        })
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+        og_image = soup.find("meta", property="og:image")
+        if og_image and og_image.get("content"):
+            return og_image["content"]
+    except Exception as e:
+        logger.debug("Fallback og:image falló para %s: %s", url, e)
+    return None
+
+
+def _limpiar_html(texto: str) -> str:
+    """Elimina etiquetas HTML y espacios redundantes."""
+    if not texto:
+        return ""
+    limpio = re.sub(r"<[^>]+>", " ", texto)
+    limpio = re.sub(r"\s+", " ", limpio).strip()
+    return limpio
+
+
+def _extraer_excerpt(contenido: str, max_caracteres: int = 500) -> str:
+    """Extrae los primeros párrafos como resumen."""
+    if not contenido:
+        return ""
+    parrafos = [p.strip() for p in contenido.split("\n") if p.strip()]
+    excerpt = ""
+    count = 0
+    for p in parrafos:
+        if count >= 3:
+            break
+        excerpt += p + " "
+        count += 1
+    excerpt = excerpt[:max_caracteres].strip()
+    if len(excerpt) >= max_caracteres:
+        excerpt = excerpt[:max_caracteres - 3] + "..."
+    return excerpt
+
+
+def _parsear_fecha_rss(entry) -> Optional[datetime]:
+    """Intenta parsear la fecha de publicación desde una entrada RSS."""
+    for campo in ("published_parsed", "updated_parsed"):
+        time_struct = getattr(entry, campo, None)
+        if time_struct:
+            try:
+                from time import mktime
+                return datetime.fromtimestamp(mktime(time_struct))
+            except Exception:
+                continue
+    return None
+
+
+async def fetch_rss(source: Source, source_profile: Optional[dict] = None) -> list[dict]:
+    """
+    Lee el RSS de una fuente, extrae artículos nuevos y retorna una lista
+    de diccionarios con los datos crudos listos para puntuar.
+
+    Cada dict contiene:
+        - source_id, title, content, excerpt, image_url, original_url,
+          category, impact_score (0), is_breaking (False),
+          status ('pending'), published_at, created_at
+
+    Si source_profile está disponible y tiene confidence >= 0.7,
+    usa el Source Profiler en vez de newspaper3k para extraer contenido.
+    """
+    logger.info("Scraping fuente: %s (%s)", source.name, source.rss_url)
+    articulos_crudos = []
+
+    # Determinar si usamos el profiler
+    usar_profiler = (
+        source_profile is not None
+        and source_profile.get("confidence_score", 0) >= MIN_CONFIDENCE_FOR_PROFILER
+        and source_profile.get("body_selector")
+    )
+
+    if usar_profiler:
+        logger.info(
+            "Fuente %s: usando Source Profiler (confidence: %.0f%%)",
+            source.name,
+            source_profile.get("confidence_score", 0) * 100,
+        )
+
+    try:
+        loop = asyncio.get_running_loop()
+
+        # Descargar y parsear RSS en un hilo separado (feedparser es síncrono)
+        feed = await loop.run_in_executor(
+            None,
+            lambda: feedparser.parse(source.rss_url),
+        )
+
+        if feed.bozo and not feed.entries:
+            logger.error("Error parseando RSS de %s: %s", source.name, feed.bozo_exception)
+            return articulos_crudos
+
+        for entry in feed.entries:
+            original_url = entry.get("link", "").strip()
+            if not original_url:
+                continue
+
+            # Extraer datos según el método disponible
+            if usar_profiler:
+                datos_profiler = await loop.run_in_executor(
+                    None, lambda: _extraer_con_profiler(original_url, source_profile)
+                )
+                if datos_profiler:
+                    datos_newspaper = datos_profiler
+                else:
+                    # Profiler falló, intentar con newspaper como fallback
+                    datos_newspaper = await loop.run_in_executor(
+                        None, _extraer_con_newspaper, original_url
+                    )
+            else:
+                # Usar newspaper3k como método principal
+                datos_newspaper = await loop.run_in_executor(
+                    None, _extraer_con_newspaper, original_url
+                )
+
+            title = datos_newspaper["title"] or _limpiar_html(entry.get("title", ""))
+            content = datos_newspaper["content"] or _limpiar_html(
+                entry.get("summary", entry.get("description", ""))
+            )
+            image_url = datos_newspaper["image_url"]
+            published_at = datos_newspaper["published_at"] or _parsear_fecha_rss(entry)
+
+            # Si no hay imagen, intentar og:image como fallback
+            if not image_url:
+                image_url = await loop.run_in_executor(
+                    None, _extraer_og_image, original_url
+                )
+
+            # Si no hay contenido, usar el summary del RSS como fallback
+            if not content:
+                content = _limpiar_html(
+                    entry.get("summary", entry.get("description", ""))
+                )
+
+            excerpt = _extraer_excerpt(content)
+
+            articulo = {
+                "source_id": source.id,
+                "title": title,
+                "content": content,
+                "excerpt": excerpt,
+                "image_url": image_url,
+                "original_url": original_url,
+                "category": source.category,
+                "impact_score": 0.0,
+                "is_breaking": False,
+                "status": "pending",
+                "published_at": published_at or datetime.utcnow(),
+                "created_at": datetime.utcnow(),
+            }
+            articulos_crudos.append(articulo)
+
+        logger.info(
+            "Fuente %s: %d artículos encontrados",
+            source.name, len(articulos_crudos),
+        )
+
+    except Exception as e:
+        logger.error("Error procesando fuente %s: %s", source.name, e)
+
+    return articulos_crudos

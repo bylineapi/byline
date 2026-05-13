@@ -1,0 +1,25 @@
+# keywords.py - Lista base de palabras clave urgentes para el scoring de impacto
+
+URGENT_KEYWORDS = [
+    "breaking",
+    "urgente",
+    "último momento",
+    "ultimo momento",
+    "muerto",
+    "asesinado",
+    "terremoto",
+    "tsunami",
+    "ataque",
+    "explosión",
+    "explosion",
+    "accidente",
+    "alerta",
+    "evacuación",
+    "evacuacion",
+    "emergencia",
+    "crisis",
+    "colapso",
+    "derrumbe",
+    "tiroteo",
+    "secuestro",
+]
