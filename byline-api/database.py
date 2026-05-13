@@ -19,6 +19,12 @@ if DATABASE_URL.startswith("postgresql://"):
 if "?sslmode=require" in DATABASE_URL:
     DATABASE_URL = DATABASE_URL.replace("?sslmode=require", "")
 
+# Remover channel_binding=require que Neon añade a la URL
+if "channel_binding=require" in DATABASE_URL:
+    DATABASE_URL = DATABASE_URL.replace("channel_binding=require", "")
+    # Limpiar & o ? que queden orphan
+    DATABASE_URL = DATABASE_URL.replace("&&", "&").replace("?&", "?").strip("?&")
+
 # Configurar SSL para Neon
 ssl_context = ssl.create_default_context()
 
