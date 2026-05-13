@@ -523,6 +523,25 @@
                     </p>
                 </div>
                 
+                <div style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 6px; margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 14px;">🎯 Fuentes a procesar:</label>
+                    <div style="margin-bottom: 8px;">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 4px;">
+                            <input type="radio" name="source-selection" value="all" checked style="cursor: pointer;">
+                            <span style="font-size: 14px;">Todas las fuentes activas</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="radio" name="source-selection" value="specific" style="cursor: pointer;">
+                            <span style="font-size: 14px;">Fuentes específicas</span>
+                        </label>
+                    </div>
+                    <div id="source-selector-container" style="display: none; max-height: 250px; overflow-y: auto; background: rgba(255,255,255,0.95); padding: 12px; border-radius: 6px;">
+                        <div id="source-checkboxes" style="display: flex; flex-direction: column; gap: 6px;">
+                            <!-- Se llena dinámicamente con JavaScript -->
+                        </div>
+                    </div>
+                </div>
+                
                 <div style="display: flex; gap: 12px; align-items: center;">
                     <button class="btn" id="btn-manual-scrape" style="background: white; color: #667eea; font-weight: 600; padding: 12px 24px; font-size: 15px;">
                         🚀 Ejecutar Scraping Ahora
@@ -982,6 +1001,65 @@ https://rss.bbc.com/news/world/latam/rss.xml
         }
 
         // Scraping Manual
+        
+        // Cargar fuentes para el selector
+        async function loadSourcesForSelector() {
+            try {
+                const res = await fetch(API_BASE + '/admin/sources', {
+                    headers: headers()
+                });
+                if (res.ok) {
+                    const sources = await res.json();
+                    const container = document.getElementById('source-checkboxes');
+                    container.innerHTML = '';
+                    
+                    if (sources.length === 0) {
+                        container.innerHTML = '<p style="color: #64748b; font-size: 13px;">No hay fuentes configuradas</p>';
+                        return;
+                    }
+                    
+                    sources.forEach(source => {
+                        const label = document.createElement('label');
+                        label.style.cssText = 'display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 6px; border-radius: 4px; transition: background 0.2s;';
+                        label.onmouseover = () => label.style.background = '#f1f5f9';
+                        label.onmouseout = () => label.style.background = 'transparent';
+                        
+                        const checkbox = document.createElement('input');
+                        checkbox.type = 'checkbox';
+                        checkbox.value = source.id;
+                        checkbox.className = 'source-checkbox';
+                        checkbox.style.cssText = 'cursor: pointer;';
+                        
+                        const text = document.createElement('span');
+                        text.style.cssText = 'font-size: 13px; color: #1e293b;';
+                        text.textContent = `${source.name} (ID: ${source.id})`;
+                        
+                        label.appendChild(checkbox);
+                        label.appendChild(text);
+                        container.appendChild(label);
+                    });
+                }
+            } catch (e) {
+                console.error('Error cargando fuentes:', e);
+            }
+        }
+        
+        // Manejar cambio en radio buttons de selección de fuentes
+        document.querySelectorAll('input[name="source-selection"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                const selectorContainer = document.getElementById('source-selector-container');
+                if (this.value === 'specific') {
+                    selectorContainer.style.display = 'block';
+                    // Cargar fuentes si es la primera vez
+                    if (document.getElementById('source-checkboxes').children.length === 0) {
+                        loadSourcesForSelector();
+                    }
+                } else {
+                    selectorContainer.style.display = 'none';
+                }
+            });
+        });
+        
         document.getElementById('btn-manual-scrape').addEventListener('click', async function() {
             const btn = this;
             const statusEl = document.getElementById('scrape-status');
@@ -998,12 +1076,35 @@ https://rss.bbc.com/news/world/latam/rss.xml
             try {
                 // Obtener fecha de prueba si se seleccionó
                 const testDateInput = document.getElementById('test-date');
-                let url = API_BASE + '/admin/scrape';
+                let queryParams = [];
+                
                 if (testDateInput && testDateInput.value) {
-                    url += `?test_date=${testDateInput.value}`;
-                    statusEl.textContent = `Extrayendo artículos con fecha de prueba: ${testDateInput.value}...`;
+                    queryParams.push(`test_date=${testDateInput.value}`);
+                }
+                
+                // Obtener fuentes seleccionadas
+                const sourceSelection = document.querySelector('input[name="source-selection"]:checked').value;
+                let selectedSourceIds = null;
+                
+                if (sourceSelection === 'specific') {
+                    // Obtener IDs de los checkboxes marcados
+                    const checkedBoxes = document.querySelectorAll('.source-checkbox:checked');
+                    if (checkedBoxes.length === 0) {
+                        alert('Por favor selecciona al menos una fuente');
+                        btn.disabled = false;
+                        btn.textContent = '🚀 Ejecutar Scraping Ahora';
+                        return;
+                    }
+                    selectedSourceIds = Array.from(checkedBoxes).map(cb => cb.value).join(',');
+                    queryParams.push(`source_ids=${selectedSourceIds}`);
+                    statusEl.textContent = `Extrayendo artículos de ${checkedBoxes.length} fuente(s) seleccionada(s)...`;
                 } else {
                     statusEl.textContent = 'Extrayendo artículos de todas las fuentes...';
+                }
+                
+                let url = API_BASE + '/admin/scrape';
+                if (queryParams.length > 0) {
+                    url += '?' + queryParams.join('&');
                 }
                 
                 const res = await fetch(url, {
@@ -1022,11 +1123,26 @@ https://rss.bbc.com/news/world/latam/rss.xml
                 
                 // Mostrar resultado exitoso
                 resultEl.style.display = 'block';
+                
+                // Mostrar información de fuentes seleccionadas si aplica
+                const sourceInfoContainer = document.getElementById('source-info-container');
+                if (sourceInfoContainer) {
+                    if (data.source_ids && data.source_ids.length > 0) {
+                        sourceInfoContainer.innerHTML = `
+                            <div style="background: #eef2ff; padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 13px; color: #4f46e5;">
+                                <strong>Fuentes seleccionadas:</strong> IDs ${data.source_ids.join(', ')}
+                            </div>
+                        `;
+                    } else {
+                        sourceInfoContainer.innerHTML = '';
+                    }
+                }
                 resultEl.innerHTML = `
                     <div style="background: rgba(255,255,255,0.95); color: #333; padding: 16px; border-radius: 8px;">
                         <div style="font-size: 18px; font-weight: 600; margin-bottom: 12px; color: #667eea;">
                             ✅ Scraping Completado
                         </div>
+                        <div id="source-info-container"></div>
                         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px;">
                             <div style="background: #f8fafc; padding: 12px; border-radius: 6px; text-align: center;">
                                 <div style="font-size: 24px; font-weight: 700; color: #667eea;">${data.sources_processed}</div>

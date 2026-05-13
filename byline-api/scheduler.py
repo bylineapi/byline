@@ -25,7 +25,7 @@ scorer = ImpactScorer()
 
 # ─── Job 1: Scraping ─────────────────────────────────────────────────────────
 
-async def scraping_job(force_date: Optional[datetime] = None):
+async def scraping_job(force_date: Optional[datetime] = None, source_ids: Optional[list[int]] = None):
     """
     Itera todas las fuentes activas, obtiene artículos nuevos via RSS,
     los puntúa y guarda en BD los que no sean 'discarded'.
@@ -34,18 +34,27 @@ async def scraping_job(force_date: Optional[datetime] = None):
     
     Args:
         force_date: Si se proporciona, usa esta fecha para todos los artículos (solo para pruebas)
+        source_ids: Lista opcional de IDs de fuentes a procesar. Si es None, procesa todas las fuentes activas.
     """
     logger.info("Iniciando scraping_job...")
     
     # Sesión 1: Obtener fuentes activas
     async with get_session_maker() as db:
-        result = await db.execute(
-            select(Source).where(Source.is_active.is_(True))
-        )
+        query = select(Source).where(Source.is_active.is_(True))
+        
+        # Si se especifican source_ids, filtrar solo esas fuentes
+        if source_ids:
+            query = query.where(Source.id.in_(source_ids))
+            logger.info("Scraping dirigido a %d fuentes específicas: %s", len(source_ids), source_ids)
+        
+        result = await db.execute(query)
         fuentes = result.scalars().all()
         
         if not fuentes:
-            logger.info("No hay fuentes activas para scrapear.")
+            if source_ids:
+                logger.info("No se encontraron fuentes activas con los IDs proporcionados: %s", source_ids)
+            else:
+                logger.info("No hay fuentes activas para scrapear.")
             return
         
         # Obtener artículos recientes para scoring

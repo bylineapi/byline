@@ -886,6 +886,7 @@ async def get_stats(
 @app.post("/admin/scrape", response_model=dict)
 async def trigger_manual_scrape(
     test_date: Optional[str] = Query(None, description="Fecha para pruebas (YYYY-MM-DD)"),
+    source_ids: Optional[str] = Query(None, description="IDs de fuentes separados por coma (ej: 1,3,5)"),
     db: AsyncSession = Depends(get_db),
     _=Depends(verify_admin_secret),
 ):
@@ -895,6 +896,7 @@ async def trigger_manual_scrape(
     
     Args:
         test_date: Fecha opcional en formato YYYY-MM-DD para pruebas
+        source_ids: IDs de fuentes específicos a procesar (separados por coma). Si no se proporciona, procesa todas las fuentes.
     """
     try:
         logger.info("🔧 Scraping manual iniciado por admin")
@@ -908,10 +910,28 @@ async def trigger_manual_scrape(
             except ValueError:
                 raise HTTPException(status_code=400, detail="Formato de fecha inválido. Use YYYY-MM-DD")
         
+        # Parsear source_ids si se proporciona
+        parsed_source_ids = None
+        if source_ids:
+            try:
+                parsed_source_ids = [int(sid.strip()) for sid in source_ids.split(",") if sid.strip()]
+                if not parsed_source_ids:
+                    raise ValueError("Lista vacía")
+                logger.info(f"🎯 Scraping dirigido a fuentes: {parsed_source_ids}")
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Formato de source_ids inválido. Use IDs separados por coma (ej: 1,3,5)")
+        
         # Contar fuentes activas antes de ejecutar
-        result_sources = await db.execute(
-            select(Source).where(Source.is_active.is_(True))
-        )
+        if parsed_source_ids:
+            # Contar solo las fuentes seleccionadas que están activas
+            result_sources = await db.execute(
+                select(Source).where(Source.is_active.is_(True), Source.id.in_(parsed_source_ids))
+            )
+        else:
+            # Contar todas las fuentes activas
+            result_sources = await db.execute(
+                select(Source).where(Source.is_active.is_(True))
+            )
         active_sources = result_sources.scalars().all()
         logger.info(f"📊 Fuentes activas encontradas: {len(active_sources)}")
         
@@ -927,7 +947,7 @@ async def trigger_manual_scrape(
         
         # Ejecutar el job de scraping (maneja su propia sesión internamente)
         try:
-            await scraping_job(force_date)
+            await scraping_job(force_date, parsed_source_ids)
             logger.info("✅ scraping_job completado")
         except Exception as scrape_error:
             logger.error(f"Error en scraping_job: {scrape_error}")
@@ -960,9 +980,10 @@ async def trigger_manual_scrape(
         
         return {
             "success": True,
-            "message": "Scraping ejecutado. Revisa los logs para detalles.",
+            "message": f"Scraping ejecutado en {len(active_sources)} fuente(s). Revisa los logs para detalles.",
             "articles_today": articles_today,
-            "sources_processed": active_sources,
+            "sources_processed": len(active_sources),
+            "source_ids": parsed_source_ids,
             "timestamp": datetime.utcnow().isoformat()
         }
         
