@@ -672,6 +672,7 @@ https://rss.bbc.com/news/world/latam/rss.xml
             <div class="card">
                 <h2>
                     Artículos recientes
+                    <span id="articles-count" style="font-size: 14px; color: #64748b; font-weight: normal;"></span>
                     <button class="btn btn-secondary btn-sm" onclick="loadArticles()">🔄 Actualizar</button>
                 </h2>
                 
@@ -1051,6 +1052,34 @@ https://rss.bbc.com/news/world/latam/rss.xml
                 // Recargar estadísticas
                 loadStats();
                 
+                // Mostrar botón para ver artículos
+                resultEl.innerHTML += `
+                    <div style="margin-top: 12px; text-align: center;">
+                        <button onclick="switchToArticles()" style="background: #10b981; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px;">
+                            📰 Ver Artículos Extraídos
+                        </button>
+                    </div>
+                `;
+                
+                // Auto-cargar artículos después de 2 segundos
+                setTimeout(() => {
+                    const articlesPanel = document.getElementById('panel-articles');
+                    if (articlesPanel && articlesPanel.classList.contains('active')) {
+                        loadArticles();
+                    }
+                }, 2000);
+                
+                // Iniciar actualización periódica de artículos cada 5 segundos
+                const refreshInterval = setInterval(() => {
+                    const articlesPanel = document.getElementById('panel-articles');
+                    if (articlesPanel && articlesPanel.classList.contains('active')) {
+                        loadArticles();
+                    } else {
+                        // Si no estamos en el panel de artículos, detener el refresh
+                        clearInterval(refreshInterval);
+                    }
+                }, 5000);
+                
             } catch (e) {
                 resultEl.style.display = 'block';
                 resultEl.innerHTML = `
@@ -1425,13 +1454,22 @@ Esta acción no se puede deshacer.`;
             }
         }
         
+        // Cambiar al panel de artículos
+        function switchToArticles() {
+            // Hacer clic en el botón de artículos en el sidebar
+            const articlesBtn = document.getElementById('nav-articles');
+            if (articlesBtn) {
+                articlesBtn.click();
+            }
+        }
+        
         async function loadArticles() {
             const tbody = document.getElementById('articles-table-body');
             const category = document.getElementById('filter-category').value;
             const breaking = document.getElementById('filter-breaking').value;
             const status = document.getElementById('filter-status').value;
             
-            let url = API_BASE + '/admin/articles?limit=50';
+            let url = API_BASE + '/admin/articles?limit=100';
             if (category) url += '&category=' + encodeURIComponent(category);
             if (breaking) url += '&is_breaking=' + breaking;
             if (status) url += '&status=' + status;
@@ -1442,15 +1480,21 @@ Esta acción no se puede deshacer.`;
                 const articles = await res.json();
                 
                 if (!articles.length) {
-                    tbody.innerHTML = '<tr><td colspan="8" style="text-align: center;">No hay artículos</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 40px;">No hay artículos aún. Ejecuta el scraping para extraer noticias.</td></tr>';
                     return;
                 }
                 
+                // Mostrar contador de artículos
+                const countElement = document.getElementById('articles-count');
+                if (countElement) {
+                    countElement.textContent = articles.length + ' artículos';
+                }
+                
                 tbody.innerHTML = articles.map(a => `
-                    <tr>
+                    <tr style="${a.created_at && (Date.now() - new Date(a.created_at).getTime() < 300000) ? 'background: #f0fdf4;' : ''}">
                         <td>${a.id}</td>
                         <td>${a.source_name}</td>
-                        <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;">${a.title}</td>
+                        <td style="max-width: 300px; overflow: hidden; text-overflow: ell;">${a.title}</td>
                         <td>${a.category || '—'}</td>
                         <td>${a.impact_score.toFixed(1)}</td>
                         <td>${a.is_breaking ? '<span class="badge badge-error">Breaking</span>' : '—'}</td>
