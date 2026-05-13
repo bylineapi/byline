@@ -8,7 +8,7 @@ from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_session_maker
-from models import Source, Article, ArticleStatusEnum, SourceProfile
+from models import Source, Article, ArticleStatusEnum, SourceProfile, ActivityLog
 from scraper import fetch_rss, MIN_CONFIDENCE_FOR_PROFILER
 from scorer import ImpactScorer
 
@@ -152,10 +152,33 @@ async def scraping_job():
                 "scraping_job completado: %d artículos nuevos guardados de %d fuentes",
                 total_nuevos, len(fuentes),
             )
+            
+            # Guardar log de actividad en la base de datos
+            log_entry = ActivityLog(
+                action="scraping_job",
+                result="success",
+                detail=f"{total_nuevos} artículos nuevos encontrados. {len(fuentes)} fuentes procesadas."
+            )
+            db.add(log_entry)
+            await db.commit()
 
         except Exception as e:
             logger.error("Error en scraping_job: %s", e)
             await db.rollback()
+            
+            # Guardar log de error en la base de datos
+            try:
+                session_maker = get_session_maker()
+                async with session_maker() as db_log:
+                    log_entry = ActivityLog(
+                        action="scraping_job",
+                        result="error",
+                        detail=f"Error: {str(e)}"
+                    )
+                    db_log.add(log_entry)
+                    await db_log.commit()
+            except Exception:
+                pass  # Si falla el logging, no interrumpir
 
 
 # ─── Job 2: Limpieza ─────────────────────────────────────────────────────────

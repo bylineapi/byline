@@ -45,6 +45,16 @@ class ClientList(BaseModel):
 
 # ─── Source ───────────────────────────────────────────────────────────────────
 
+class SourceBasic(BaseModel):
+    """Schema básico de fuente para incluir en respuestas de artículos."""
+    id: int
+    name: str
+    url: Optional[str] = None
+    favicon_url: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
 class SourceCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     url: Optional[str] = None
@@ -121,6 +131,7 @@ class VerifyProfileOut(BaseModel):
 class ArticleOut(BaseModel):
     id: int
     source_id: int
+    source: Optional[SourceBasic] = None  # Objeto fuente anidado con datos completos
     title: str
     content: Optional[str]
     excerpt: Optional[str]
@@ -142,3 +153,64 @@ class HealthOut(BaseModel):
     status: str
     version: str = "0.1.0"
     service: str = "Byline"
+
+
+# ─── Client Update (PATCH) ──────────────────────────────────────────────────
+
+class ClientUpdate(BaseModel):
+    """Schema para actualización parcial de cliente."""
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    plan: Optional[str] = Field(None, pattern=r"^(basic|pro|business)$")
+    is_active: Optional[bool] = None
+
+
+class ClientUpdateOut(BaseModel):
+    """Respuesta tras actualizar un cliente."""
+    id: int
+    name: str
+    plan: str
+    is_active: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ─── Stats ────────────────────────────────────────────────────────────────────
+
+class StatsOut(BaseModel):
+    """Estadísticas del día actual."""
+    articles_today: int
+    breaking_today: int
+    active_sources: int
+    total_clients: int
+    active_clients: int
+    articles_discarded_today: int
+
+
+# ─── Activity Log ─────────────────────────────────────────────────────────────
+
+class LogOut(BaseModel):
+    """Entrada de log de actividad."""
+    id: int
+    action: str
+    result: str
+    detail: Optional[str]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ─── Article List (Admin) ───────────────────────────────────────────────────
+
+class ArticleListItem(BaseModel):
+    """Artículo para lista administrativa."""
+    id: int
+    source_name: str  # Nombre de la fuente
+    title: str
+    category: Optional[str]
+    impact_score: float
+    is_breaking: bool
+    status: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

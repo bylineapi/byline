@@ -114,3 +114,19 @@ class ClientArticle(Base):
 
     client = relationship("Client", back_populates="client_articles")
     article = relationship("Article", back_populates="client_articles")
+
+
+# ─── Tabla: activity_logs (logs de actividad del sistema) ─────────────────────
+
+class ActivityLog(Base):
+    """
+    Tabla para almacenar logs de actividad del sistema.
+    Usado por el scheduler y endpoints admin para registrar eventos.
+    """
+    __tablename__ = "activity_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    action = Column(String(100), nullable=False)  # Nombre de la acción/evento
+    result = Column(String(20), nullable=False)    # success, error, warning
+    detail = Column(Text, nullable=True)          # Detalles adicionales
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

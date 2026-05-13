@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-include nwwp_PLUGIN_DIR . 'admin/css/admin-styles.php';
+// Los estilos están en admin/css/admin.css que se carga automáticamente
 
 // Obtener configuración actual
 $detected_plan = get_option('nwwp_detected_plan', 'basic');
@@ -19,7 +19,7 @@ $api_url       = get_option('nwwp_api_url', '');
 $api_key       = get_option('nwwp_api_key', '');
 $content_mode  = get_option('nwwp_content_mode', 'excerpt');
 $posts_per_hour = get_option('nwwp_posts_per_hour', 5);
-$activar_breaking = get_option('nwwp_activar_breaking', false);
+$activar_breaking = get_option('nwwp_breaking_enabled', false);
 $default_image_id = get_option('nwwp_default_image_id', 0);
 $category_map = get_option('nwwp_category_map', array());
 $extra_keywords = get_option('nwwp_extra_keywords', '');
@@ -79,6 +79,49 @@ foreach ($wp_categories as $cat) {
 
 // URL de API verificada (solo lectura si ya hay conexión)
 $api_verified = !empty($api_url) && !empty($api_key);
+
+// Owner Secret y modo dueño
+$owner_secret = get_option('nwwp_owner_secret', '');
+$is_owner_mode = nwwp_es_modo_dueno();
+$product_map = get_option('nwwp_product_map', array());
+
+// Detectar si WooCommerce está activo
+$woocommerce_active = class_exists('WooCommerce');
+
+// Obtener productos de WooCommerce si está activo
+$woo_products = array();
+if ($woocommerce_active) {
+    $products = wc_get_products(array('status' => 'publish', 'limit' => -1));
+    foreach ($products as $product) {
+        $woo_products[$product->get_id()] = $product->get_name();
+    }
+}
+
+// Últimas transacciones de WooCommerce (últimos 10 pedidos procesados)
+$woo_transactions = array();
+if ($woocommerce_active && $is_owner_mode) {
+    $orders = wc_get_orders(array(
+        'status' => 'completed',
+        'limit' => 20,
+        'orderby' => 'date',
+        'order' => 'DESC',
+    ));
+
+    foreach ($orders as $order) {
+        $procesado = $order->get_meta('_nwwp_procesado');
+        if (!empty($procesado)) {
+            $woo_transactions[] = array(
+                'id' => $order->get_id(),
+                'cliente' => $order->get_billing_first_name() . ' ' . $order->get_billing_last_name(),
+                'email' => $order->get_billing_email(),
+                'plan' => $order->get_meta('_nwwp_plan'),
+                'api_key' => $order->get_meta('_nwwp_api_key'),
+                'fecha' => $order->get_date_created()->date('Y-m-d H:i'),
+            );
+            if (count($woo_transactions) >= 10) break;
+        }
+    }
+}
 ?>
 
 <div class="nwwp-wrap">
@@ -154,7 +197,7 @@ $api_verified = !empty($api_url) && !empty($api_key);
     <!-- Formulario principal -->
     <form id="nwwp-settings-form" method="post" action="#">
         <?php 
-        wp_nonce_field('nwwp_save_settings');
+        wp_nonce_field('nwwp_verify_connection_nonce', 'nwwp_settings_nonce');
         ?>
 
         <!-- Sección 1: Conexión API -->
@@ -195,6 +238,27 @@ $api_verified = !empty($api_url) && !empty($api_key);
                             <span id="nwwp-verify-msg" class="nwwp-verify-msg"></span>
                         </div>
                         <p class="nwwp-form-hint">Obtén tu API Key en <a href="https://byline.io/admin" target="_blank">byline.io/admin</a></p>
+                    </div>
+                </div>
+
+                <div class="nwwp-form-row">
+                    <div class="nwwp-form-label">
+                        <label for="nwwp_owner_secret">Owner Secret (Modo Dueño)</label>
+                    </div>
+                    <div class="nwwp-form-input">
+                        <div class="nwwp-input-with-btn">
+                            <input type="password" 
+                                   id="nwwp_owner_secret" 
+                                   name="nwwp_owner_secret" 
+                                   value="<?php echo esc_attr($owner_secret); ?>"
+                                   autocomplete="new-password" />
+                            <button type="button" id="nwwp-verify-owner-btn">Verificar</button>
+                            <span id="nwwp-verify-owner-msg" class="nwwp-verify-msg"></span>
+                        </div>
+                        <p class="nwwp-form-hint">El Owner Secret activa el modo Dueño. Consíguelo en el archivo .env de tu Byline API.</p>
+                        <?php if ($is_owner_mode): ?>
+                            <p class="nwwp-form-hint" style="color:#2e7d32;">✓ Modo Dueño activo</p>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -285,8 +349,8 @@ $api_verified = !empty($api_url) && !empty($api_key);
                         <div class="nwwp-toggle-label">
                             <label class="nwwp-toggle">
                                 <input type="checkbox" 
-                                       id="nwwp_activar_breaking" 
-                                       name="nwwp_activar_breaking" 
+                                       id="nwwp_breaking_enabled" 
+                                       name="nwwp_breaking_enabled" 
                                        value="1"
                                        <?php checked(1, $activar_breaking); ?>
                                        <?php disabled('basic' === $detected_plan); ?> />
@@ -404,6 +468,115 @@ $api_verified = !empty($api_url) && !empty($api_key);
             </div>
         </div>
 
+        <?php if ($is_owner_mode): ?>
+        <div class="nwwp-section">
+            <div class="nwwp-section-header">
+                <div class="nwwp-section-icon orange">🛒</div>
+                <div class="nwwp-section-title">
+                    <h2>Integración WooCommerce</h2>
+                    <p>Automatiza la gestión de clientes con WooCommerce</p>
+                </div>
+            </div>
+            <div class="nwwp-section-content">
+                <?php if (!$woocommerce_active): ?>
+                    <div class="nwwp-notice-warning">
+                        <strong>WooCommerce no está instalado.</strong>
+                        <p>Instala WooCommerce para automatizar la gestión de clientes y cobros.</p>
+                    </div>
+                <?php else: ?>
+                    <p class="nwwp-form-hint">Mapea los productos de WooCommerce con los planes de Byline:</p>
+                    
+                    <div class="nwwp-product-map">
+                        <div class="nwwp-form-row">
+                            <div class="nwwp-form-label">
+                                <label for="nwwp_product_basic">Plan Basic</label>
+                            </div>
+                            <div class="nwwp-form-input">
+                                <select id="nwwp_product_basic" name="nwwp_product_map[basic]">
+                                    <option value="">— Seleccionar producto —</option>
+                                    <?php foreach ($woo_products as $id => $name): ?>
+                                        <option value="<?php echo esc_attr($id); ?>" <?php selected(isset($product_map['basic']) ? $product_map['basic'] : '', $id); ?>>
+                                            <?php echo esc_html($id . ' - ' . $name); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="nwwp-form-row">
+                            <div class="nwwp-form-label">
+                                <label for="nwwp_product_pro">Plan Pro</label>
+                            </div>
+                            <div class="nwwp-form-input">
+                                <select id="nwwp_product_pro" name="nwwp_product_map[pro]">
+                                    <option value="">— Seleccionar producto —</option>
+                                    <?php foreach ($woo_products as $id => $name): ?>
+                                        <option value="<?php echo esc_attr($id); ?>" <?php selected(isset($product_map['pro']) ? $product_map['pro'] : '', $id); ?>>
+                                            <?php echo esc_html($id . ' - ' . $name); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="nwwp-form-row">
+                            <div class="nwwp-form-label">
+                                <label for="nwwp_product_business">Plan Business</label>
+                            </div>
+                            <div class="nwwp-form-input">
+                                <select id="nwwp_product_business" name="nwwp_product_map[business]">
+                                    <option value="">— Seleccionar producto —</option>
+                                    <?php foreach ($woo_products as $id => $name): ?>
+                                        <option value="<?php echo esc_attr($id); ?>" <?php selected(isset($product_map['business']) ? $product_map['business'] : '', $id); ?>>
+                                            <?php echo esc_html($id . ' - ' . $name); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <?php if (!empty($woo_transactions)): ?>
+                        <h3 style="margin-top:30px; margin-bottom:15px;">Últimas transacciones</h3>
+                        <table class="nwwp-transactions-table">
+                            <thead>
+                                <tr>
+                                    <th>Cliente</th>
+                                    <th>Email</th>
+                                    <th>Plan</th>
+                                    <th>API Key</th>
+                                    <th>Fecha</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($woo_transactions as $tx): ?>
+                                    <tr>
+                                        <td><?php echo esc_html($tx['cliente']); ?></td>
+                                        <td><?php echo esc_html($tx['email']); ?></td>
+                                        <td><span class="nwwp-plan-badge <?php echo esc_attr($tx['plan']); ?>"><?php echo esc_html(ucfirst($tx['plan'])); ?></span></td>
+                                        <td><code><?php echo esc_html(substr($tx['api_key'], 0, 8) . '...'); ?></code></td>
+                                        <td><?php echo esc_html($tx['fecha']); ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    <?php endif; ?>
+
+                    <div class="nwwp-woo-info" style="margin-top:20px; padding:15px; background:#f5f5f5; border-radius:4px;">
+                        <h4>Información de integración:</h4>
+                        <ul style="margin:10px 0; padding-left:20px;">
+                            <li>Los clientes se crean automáticamente cuando completan un pago.</li>
+                            <li>Las suscripciones canceladas o expiradas desactivan el cliente en Byline.</li>
+                            <li>Los cambios de plan actualizan automáticamente el plan del cliente.</li>
+                            <li>El cliente recibe un email con su API Key al completar el pago.</li>
+                        </ul>
+                        <?php if (!class_exists('WC_Subscriptions')): ?>
+                            <p style="color:#f57c00;"><strong>Nota:</strong> WooCommerce Subscriptions no está instalado. Las funciones de cancelación y renovación automática no estarán disponibles, pero el registro de clientes funcionará.</p>
+                        <?php endif; ?>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+
         <!-- Footer -->
         <div class="nwwp-footer">
             <div class="nwwp-footer-left">
@@ -419,110 +592,218 @@ $api_verified = !empty($api_url) && !empty($api_key);
 </div>
 
 <script>
-jQuery(document).ready(function($) {
-    // Guardado por AJAX en lugar de enviar a options.php
-    $('#nwwp-settings-form').on('submit', function(e) {
-        e.preventDefault();
+(function() {
+    'use strict';
 
-        var mapData = {};
-        $('#nwwp-category-map-rows .nwwp-category-row').each(function() {
-            var apiCat = $(this).find('input[type="text"]').val();
-            var wpCat = $(this).find('select').val();
-            if (apiCat && wpCat) {
-                mapData[apiCat] = wpCat;
-            }
-        });
+    // Guardado por AJAX
+    var settingsForm = document.getElementById('nwwp-settings-form');
+    if (settingsForm) {
+        settingsForm.addEventListener('submit', function(e) {
+            e.preventDefault();
 
-        var formData = {
-            action: 'nwwp_save_settings_ajax',
-            nonce: nwwpAdmin.nonce,
-            nwwp_api_url: $('#nwwp_api_url').val(),
-            nwwp_api_key: $('#nwwp_api_key').val(),
-            nwwp_content_mode: $('input[name="nwwp_content_mode"]:checked').val(),
-            nwwp_posts_per_hour: $('#nwwp_posts_per_hour').val(),
-            nwwp_activar_breaking: $('#nwwp_activar_breaking').is(':checked') ? 1 : 0,
-            nwwp_default_image_id: $('#nwwp_default_image_id').val(),
-            nwwp_category_map: JSON.stringify(mapData),
-            nwwp_extra_keywords: $('#nwwp_extra_keywords').val()
-        };
-
-        $.ajax({
-            url: nwwpAdmin.ajaxUrl,
-            type: 'POST',
-            data: formData,
-            beforeSend: function() {
-                $('#nwwp-save-btn').prop('disabled', true).text('Guardando...');
-            },
-            success: function(response) {
-                if (response.success) {
-                    $('#nwwp-save-message').html('<span style="color:#2e7d32;">Cambios guardados correctamente</span>').show();
-                    setTimeout(function() {
-                        $('#nwwp-save-message').fadeOut();
-                    }, 3000);
-                } else {
-                    $('#nwwp-save-message').html('<span style="color:#c62828;">Error: ' + response.data.message + '</span>').show();
+            var categoryRows = document.querySelectorAll('#nwwp-category-map-rows .nwwp-category-row');
+            var mapData = {};
+            for (var i = 0; i < categoryRows.length; i++) {
+                var apiCat = categoryRows[i].querySelector('input[type="text"]').value;
+                var wpCat = categoryRows[i].querySelector('select').value;
+                if (apiCat && wpCat) {
+                    mapData[apiCat] = wpCat;
                 }
-            },
-            error: function() {
-                $('#nwwp-save-message').html('<span style="color:#c62828;">Error de conexión</span>').show();
-            },
-            complete: function() {
-                $('#nwwp-save-btn').prop('disabled', false).text('Guardar cambios');
             }
+
+            var formData = new FormData();
+            formData.append('action', 'nwwp_save_settings_ajax');
+            formData.append('nwwp_settings_nonce', nwwpAdmin.nonce);
+            formData.append('nwwp_api_url', document.getElementById('nwwp_api_url').value);
+            formData.append('nwwp_api_key', document.getElementById('nwwp_api_key').value);
+            
+            var contentModeInputs = document.querySelectorAll('input[name="nwwp_content_mode"]');
+            for (var i = 0; i < contentModeInputs.length; i++) {
+                if (contentModeInputs[i].checked) {
+                    formData.append('nwwp_content_mode', contentModeInputs[i].value);
+                    break;
+                }
+            }
+            
+            formData.append('nwwp_posts_per_hour', document.getElementById('nwwp_posts_per_hour').value);
+            
+            var breakingCheckbox = document.getElementById('nwwp_activar_breaking');
+            formData.append('nwwp_activar_breaking', breakingCheckbox && breakingCheckbox.checked ? 1 : 0);
+            
+            formData.append('nwwp_default_image_id', document.getElementById('nwwp_default_image_id').value);
+            formData.append('nwwp_category_map', JSON.stringify(mapData));
+            formData.append('nwwp_extra_keywords', document.getElementById('nwwp_extra_keywords').value);
+
+            var saveBtn = document.getElementById('nwwp-save-btn');
+            var saveMessage = document.getElementById('nwwp-save-message');
+            var originalBtnText = saveBtn.textContent;
+            
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Guardando...';
+
+            fetch(nwwpAdmin.ajaxUrl, {
+                method: 'POST',
+                body: formData
+            })
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    saveMessage.innerHTML = '<span style="color:#2e7d32;">Cambios guardados correctamente</span>';
+                    saveMessage.style.display = 'inline';
+                    setTimeout(function() { saveMessage.style.display = 'none'; }, 3000);
+                } else {
+                    saveMessage.innerHTML = '<span style="color:#c62828;">Error: ' + (data.data && data.data.message ? data.data.message : 'Error desconocido') + '</span>';
+                    saveMessage.style.display = 'inline';
+                }
+            })
+            .catch(function() {
+                saveMessage.innerHTML = '<span style="color:#c62828;">Error de conexión</span>';
+                saveMessage.style.display = 'inline';
+            })
+            .finally(function() {
+                saveBtn.disabled = false;
+                saveBtn.textContent = originalBtnText;
+            });
         });
-    });
+    }
 
     // Agregar nueva fila de categoría
-    $('#nwwp-add-category-row').on('click', function() {
-        var options = '<option value="">— Seleccionar —</option>';
-        <?php foreach ($wp_cats_by_id as $id => $name) : ?>
-        options += '<option value="<?php echo esc_attr($id); ?>"><?php echo esc_js($name); ?></option>';
-        <?php endforeach; ?>
-
-        var rowHtml = '<div class="nwwp-category-row">' +
-            '<input type="text" name="nwwp_category_map_api[]" value="" placeholder="Categoría API" />' +
-            '<span class="nwwp-category-arrow">→</span>' +
-            '<select name="nwwp_category_map_wp[]">' + options + '</select>' +
-            '<button type="button" class="nwwp-btn-remove-row" title="Eliminar">×</button>' +
-            '</div>';
-        $('#nwwp-category-map-rows').append(rowHtml);
-    });
-
-    // Eliminar fila de categoría
-    $(document).on('click', '.nwwp-btn-remove-row', function() {
-        var $rows = $('#nwwp-category-map-rows .nwwp-category-row');
-        if ($rows.length > 1) {
-            $(this).closest('.nwwp-category-row').remove();
-        } else {
-            $(this).closest('.nwwp-category-row').find('input').val('');
-            $(this).closest('.nwwp-category-row').find('select').val('');
-        }
-    });
-
-    // Selection de imagen
-    $('#nwwp-upload-image-btn').on('click', function(e) {
-        e.preventDefault();
-        var mediaFrame = wp.media({
-            title: 'Seleccionar imagen por defecto',
-            button: { text: 'Usar imagen' },
-            multiple: false,
-            library: { type: 'image' }
+    var addCategoryBtn = document.getElementById('nwwp-add-category-row');
+    var categoryRowsContainer = document.getElementById('nwwp-category-map-rows');
+    
+    if (addCategoryBtn && categoryRowsContainer) {
+        addCategoryBtn.addEventListener('click', function() {
+            var firstSelect = categoryRowsContainer.querySelector('select');
+            var options = '<option value="">— Seleccionar —</option>';
+            
+            if (firstSelect) {
+                var selectOptions = firstSelect.querySelectorAll('option');
+                for (var i = 0; i < selectOptions.length; i++) {
+                    options += '<option value="' + selectOptions[i].value + '">' + selectOptions[i].textContent + '</option>';
+                }
+            }
+            
+            var newRow = document.createElement('div');
+            newRow.className = 'nwwp-category-row';
+            newRow.innerHTML = 
+                '<input type="text" name="nwwp_category_map_api[]" value="" placeholder="Categoría API" />' +
+                '<span class="nwwp-category-arrow">→</span>' +
+                '<select name="nwwp_category_map_wp[]">' + options + '</select>' +
+                '<button type="button" class="nwwp-btn-remove-row" title="Eliminar">×</button>';
+            
+            categoryRowsContainer.appendChild(newRow);
         });
+    }
 
-        mediaFrame.on('select', function() {
-            var attachment = mediaFrame.state().get('selection').first().toJSON();
-            $('#nwwp_default_image_id').val(attachment.id);
-            $('#nwwp-image-preview').html('<img src="' + attachment.sizes.thumbnail.url + '" alt="Preview" />');
+    // Eliminar fila de categoría (delegated event)
+    if (categoryRowsContainer) {
+        categoryRowsContainer.addEventListener('click', function(e) {
+            if (e.target.classList.contains('nwwp-btn-remove-row')) {
+                var rows = categoryRowsContainer.querySelectorAll('.nwwp-category-row');
+                if (rows.length > 1) {
+                    e.target.closest('.nwwp-category-row').remove();
+                } else {
+                    var row = e.target.closest('.nwwp-category-row');
+                    var input = row.querySelector('input');
+                    var select = row.querySelector('select');
+                    if (input) input.value = '';
+                    if (select) select.value = '';
+                }
+            }
         });
+    }
 
-        mediaFrame.open();
-    });
+    // Selector de imagen
+    var uploadImageBtn = document.getElementById('nwwp-upload-image-btn');
+    var removeImageBtn = document.getElementById('nwwp-remove-image-btn');
+    var defaultImageIdInput = document.getElementById('nwwp_default_image_id');
+    var imagePreview = document.getElementById('nwwp-image-preview');
 
-    // Quitar imagen
-    $('#nwwp-remove-image-btn').on('click', function(e) {
-        e.preventDefault();
-        $('#nwwp_default_image_id').val('');
-        $('#nwwp-image-preview').html('');
-    });
-});
+    if (uploadImageBtn && typeof wp !== 'undefined' && wp.media) {
+        uploadImageBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            var mediaFrame = wp.media({
+                title: 'Seleccionar imagen por defecto',
+                button: { text: 'Usar imagen' },
+                multiple: false,
+                library: { type: 'image' }
+            });
+
+            mediaFrame.on('select', function() {
+                var attachment = mediaFrame.state().get('selection').first().toJSON();
+                if (defaultImageIdInput) defaultImageIdInput.value = attachment.id;
+                if (imagePreview && attachment.sizes && attachment.sizes.thumbnail) {
+                    imagePreview.innerHTML = '<img src="' + attachment.sizes.thumbnail.url + '" alt="Preview" />';
+                }
+            });
+
+            mediaFrame.open();
+        });
+    }
+
+    if (removeImageBtn) {
+        removeImageBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            if (defaultImageIdInput) defaultImageIdInput.value = '';
+            if (imagePreview) imagePreview.innerHTML = '';
+        });
+    }
+})();
+</script>
+
+<script>
+(function() {
+    'use strict';
+
+    var verifyOwnerBtn = document.getElementById('nwwp-verify-owner-btn');
+    var ownerSecretInput = document.getElementById('nwwp_owner_secret');
+    var apiUrlInput = document.getElementById('nwwp_api_url');
+    var ownerMsg = document.getElementById('nwwp-verify-owner-msg');
+
+    if (verifyOwnerBtn && ownerSecretInput && apiUrlInput) {
+        verifyOwnerBtn.addEventListener('click', function() {
+            var apiUrl = apiUrlInput.value.trim();
+            var ownerSecret = ownerSecretInput.value.trim();
+
+            if (!apiUrl || !ownerSecret) {
+                ownerMsg.innerHTML = '<span style="color:#c62828;">Por favor, completa la URL y el Owner Secret.</span>';
+                return;
+            }
+
+            verifyOwnerBtn.disabled = true;
+            verifyOwnerBtn.textContent = 'Verificando...';
+            ownerMsg.innerHTML = '';
+
+            var formData = new FormData();
+            formData.append('action', 'nwwp_verify_owner_secret');
+            formData.append('nonce', nwwpAdmin.nonce);
+            formData.append('api_url', apiUrl);
+            formData.append('owner_secret', ownerSecret);
+
+            fetch(nwwpAdmin.ajaxUrl, {
+                method: 'POST',
+                body: formData
+            })
+            .then(function(response) {
+                return response.json();
+            })
+            .then(function(data) {
+                if (data.success) {
+                    ownerMsg.innerHTML = '<span style="color:#2e7d32;">' + data.data.message + '</span>';
+                    location.reload();
+                } else {
+                    ownerMsg.innerHTML = '<span style="color:#c62828;">' + data.data.message + '</span>';
+                }
+            })
+            .catch(function() {
+                ownerMsg.innerHTML = '<span style="color:#c62828;">Error de conexión.</span>';
+            })
+            .finally(function() {
+                verifyOwnerBtn.disabled = false;
+                verifyOwnerBtn.textContent = 'Verificar';
+            });
+        });
+    }
+})();
 </script>

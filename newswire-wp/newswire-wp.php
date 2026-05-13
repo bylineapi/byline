@@ -112,3 +112,19 @@ function nwwp_init() {
         new nwwp_Admin();
     }
 }
+
+// ─── Integración WooCommerce (Modo Dueño) ────────────────────────────────────
+
+add_action('plugins_loaded', 'nwwp_cargar_woocommerce_integration');
+
+function nwwp_cargar_woocommerce_integration() {
+    if (!class_exists('WooCommerce')) {
+        return;
+    }
+
+    if (!function_exists('nwwp_es_modo_dueno') || !nwwp_es_modo_dueno()) {
+        return;
+    }
+
+    require_once nwwp_PLUGIN_DIR . 'includes/class-woocommerce.php';
+}

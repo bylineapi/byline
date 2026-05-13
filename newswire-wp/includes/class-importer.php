@@ -31,9 +31,10 @@ class nwwp_Importer {
         }
 
         // ─── Obtener autor ───────────────────────────────────────────────
-        $source_name = isset($article['source_name']) ? $article['source_name'] : '';
-        $source_url  = isset($article['source_url']) ? $article['source_url'] : '';
-        $favicon_url = isset($article['favicon_url']) ? $article['favicon_url'] : '';
+        // Ahora la API devuelve los datos de la fuente en un objeto anidado 'source'
+        $source_name = isset($article['source']['name']) ? $article['source']['name'] : '';
+        $source_url  = isset($article['source']['url']) ? $article['source']['url'] : '';
+        $favicon_url = isset($article['source']['favicon_url']) ? $article['source']['favicon_url'] : '';
 
         if (empty($source_name)) {
             $source_name = 'Fuente-' . (isset($article['source_id']) ? $article['source_id'] : 'desconocida');

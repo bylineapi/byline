@@ -56,7 +56,7 @@ class nwwp_Cron {
             return;
         }
 
-        $activar_breaking = get_option('nwwp_activar_breaking', false);
+        $activar_breaking = get_option('nwwp_breaking_enabled', false);
         if (!$activar_breaking) {
             return;
         }

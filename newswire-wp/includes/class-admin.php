@@ -19,6 +19,7 @@ class nwwp_Admin {
         add_action('admin_menu', array($this, 'registrar_menu'));
         add_action('admin_init', array($this, 'registrar_configuracion'));
         add_action('wp_ajax_nwwp_verify_connection', array($this, 'ajax_verificar_conexion'));
+        add_action('wp_ajax_nwwp_verify_owner_secret', array($this, 'ajax_verificar_owner_secret'));
         add_action('wp_ajax_nwwp_save_settings_ajax', array($this, 'ajax_guardar_settings'));
         add_action('admin_enqueue_scripts', array($this, 'cargar_assets'));
         add_filter('plugin_action_links_' . plugin_basename(nwwp_PLUGIN_DIR . 'newswire-wp.php'), array($this, 'agregar_enlace_ajustes'));
@@ -84,6 +85,89 @@ class nwwp_Admin {
 
         register_setting('nwwp_settings_group', 'nwwp_detected_plan', array(
             'sanitize_callback' => 'sanitize_text_field',
+        ));
+
+        register_setting('nwwp_settings_group', 'nwwp_owner_secret', array(
+            'sanitize_callback' => 'sanitize_text_field',
+        ));
+
+        register_setting('nwwp_settings_group', 'nwwp_product_map', array(
+            'sanitize_callback' => array($this, 'sanitize_product_map'),
+        ));
+    }
+
+    public function sanitize_product_map($value) {
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            if (is_array($decoded)) {
+                $value = $decoded;
+            } else {
+                return array();
+            }
+        }
+
+        if (!is_array($value)) {
+            return array();
+        }
+
+        $clean = array();
+        $allowed_plans = array('basic', 'pro', 'business');
+
+        foreach ($value as $plan => $product_id) {
+            $plan = sanitize_text_field($plan);
+            $product_id = absint($product_id);
+
+            if (in_array($plan, $allowed_plans, true) && $product_id > 0) {
+                $clean[$plan] = $product_id;
+            }
+        }
+
+        return $clean;
+    }
+
+    public function ajax_verificar_owner_secret() {
+        check_ajax_referer('nwwp_verify_owner_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Sin permisos.'));
+        }
+
+        $api_url = isset($_POST['api_url']) ? esc_url_raw($_POST['api_url']) : '';
+        $owner_secret = isset($_POST['owner_secret']) ? sanitize_text_field($_POST['owner_secret']) : '';
+
+        if (empty($api_url) || empty($owner_secret)) {
+            wp_send_json_error(array('message' => 'URL de API y Owner Secret son obligatorios.'));
+        }
+
+        $health_url = trailingslashit($api_url) . 'health';
+
+        $response = wp_remote_get($health_url, array(
+            'timeout' => 15,
+            'headers' => array(
+                'X-Admin-Secret' => $owner_secret,
+            ),
+            'sslverify' => true,
+        ));
+
+        if (is_wp_error($response)) {
+            wp_send_json_error(array(
+                'message' => 'No se pudo conectar: ' . $response->get_error_message(),
+            ));
+        }
+
+        $status_code = wp_remote_retrieve_response_code($response);
+
+        if (200 !== $status_code) {
+            wp_send_json_error(array(
+                'message' => 'Owner Secret inválido. Código HTTP: ' . $status_code,
+            ));
+        }
+
+        update_option('nwwp_owner_secret', $owner_secret);
+        update_option('nwwp_api_url', $api_url);
+
+        wp_send_json_success(array(
+            'message' => 'Modo Dueño activado correctamente.',
         ));
     }
 
@@ -197,7 +281,7 @@ class nwwp_Admin {
     }
 
     public function ajax_guardar_settings() {
-        check_ajax_referer('nwwp_verify_connection_nonce', 'nonce');
+        check_ajax_referer('nwwp_verify_connection_nonce', 'nwwp_settings_nonce');
 
         if (!current_user_can('manage_options')) {
             wp_send_json_error(array('message' => 'Sin permisos'));
@@ -242,6 +326,20 @@ class nwwp_Admin {
         if (isset($_POST['nwwp_extra_keywords'])) {
             update_option('nwwp_extra_keywords', sanitize_textarea_field($_POST['nwwp_extra_keywords']));
         }
+        if (isset($_POST['nwwp_owner_secret'])) {
+            update_option('nwwp_owner_secret', sanitize_text_field($_POST['nwwp_owner_secret']));
+        }
+        if (isset($_POST['nwwp_product_map']) && is_array($_POST['nwwp_product_map'])) {
+            $clean_map = array();
+            foreach ($_POST['nwwp_product_map'] as $plan => $product_id) {
+                $plan = sanitize_text_field($plan);
+                $product_id = absint($product_id);
+                if (in_array($plan, array('basic', 'pro', 'business'), true) && $product_id > 0) {
+                    $clean_map[$plan] = $product_id;
+                }
+            }
+            update_option('nwwp_product_map', $clean_map);
+        }
 
         wp_send_json_success(array('message' => 'Configuración guardada correctamente'));
     }
@@ -280,4 +378,31 @@ class nwwp_Admin {
         array_unshift($links, $ajustes_link);
         return $links;
     }
+}
+
+function nwwp_es_modo_dueno() {
+    $owner_secret = get_option('nwwp_owner_secret', '');
+    $api_url = get_option('nwwp_api_url', '');
+
+    if (empty($owner_secret) || empty($api_url)) {
+        return false;
+    }
+
+    $health_url = trailingslashit($api_url) . 'health';
+
+    $response = wp_remote_get($health_url, array(
+        'timeout' => 10,
+        'headers' => array(
+            'X-Admin-Secret' => $owner_secret,
+        ),
+        'sslverify' => true,
+    ));
+
+    if (is_wp_error($response)) {
+        return false;
+    }
+
+    $status_code = wp_remote_retrieve_response_code($response);
+
+    return 200 === $status_code;
 }

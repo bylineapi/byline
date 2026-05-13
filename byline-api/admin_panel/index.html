@@ -3,8 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Byline Admin - Source Profiler</title>
+    <title>Byline Admin - Panel de Administración</title>
     <style>
+        /* ============================================
+           ESTILOS BASE
+           ============================================ */
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -12,18 +15,77 @@
             color: #1e293b;
             line-height: 1.6;
         }
+
+        /* ============================================
+           HEADER
+           ============================================ */
         .header {
             background: linear-gradient(135deg, #1e3a5f, #2d5a87);
             color: white;
-            padding: 24px 32px;
+            padding: 20px 32px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
-        .header h1 { font-size: 24px; font-weight: 600; }
-        .header p { opacity: 0.85; font-size: 14px; margin-top: 4px; }
+        .header h1 { font-size: 22px; font-weight: 600; }
+        .header p { opacity: 0.85; font-size: 13px; margin-top: 2px; }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .admin-secret-display {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+
+        /* ============================================
+           CONTENEDOR PRINCIPAL
+           ============================================ */
         .container {
-            max-width: 1000px;
-            margin: 32px auto;
+            max-width: 1200px;
+            margin: 24px auto;
             padding: 0 16px;
         }
+
+        /* ============================================
+           TABS DE NAVEGACIÓN
+           ============================================ */
+        .nav-tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 24px;
+            background: white;
+            padding: 8px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .nav-tab {
+            padding: 10px 20px;
+            border: none;
+            background: transparent;
+            font-size: 14px;
+            font-weight: 500;
+            color: #64748b;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+        .nav-tab:hover { background: #f1f5f9; color: #2d5a87; }
+        .nav-tab.active {
+            background: #2d5a87;
+            color: white;
+        }
+
+        /* ============================================
+           SECCIONES (PÁNELES)
+           ============================================ */
+        .panel { display: none; }
+        .panel.active { display: block; }
+
+        /* ============================================
+           TARJETAS (CARDS)
+           ============================================ */
         .card {
             background: white;
             border-radius: 8px;
@@ -36,65 +98,90 @@
             margin-bottom: 16px;
             padding-bottom: 8px;
             border-bottom: 2px solid #e2e8f0;
-        }
-        .tabs {
             display: flex;
-            border-bottom: 2px solid #e2e8f0;
-            margin-bottom: 24px;
+            justify-content: space-between;
+            align-items: center;
         }
-        .tab {
-            padding: 12px 24px;
-            cursor: pointer;
-            border: none;
-            background: none;
-            font-size: 14px;
-            font-weight: 500;
-            color: #64748b;
-            border-bottom: 2px solid transparent;
-            margin-bottom: -2px;
-            transition: all 0.2s;
+
+        /* ============================================
+           DASHBOARD - TARJETAS DE MÉTRICAS
+           ============================================ */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-top: 16px;
         }
-        .tab:hover { color: #2d5a87; }
-        .tab.active {
-            color: #2d5a87;
-            border-bottom-color: #2d5a87;
+        .stat-card {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
         }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
-        .form-group { margin-bottom: 16px; }
-        .form-group label {
-            display: block;
-            font-weight: 500;
-            margin-bottom: 6px;
-            color: #334155;
+        .stat-card.breaking {
+            background: #fef2f2;
+            border-color: #fecaca;
         }
-        .form-group input[type="text"],
-        .form-group input[type="url"],
-        .form-group textarea {
-            width: 100%;
-            padding: 10px 12px;
-            border: 1px solid #cbd5e1;
-            border-radius: 6px;
-            font-size: 14px;
-            transition: border-color 0.2s;
+        .stat-card .stat-value {
+            font-size: 36px;
+            font-weight: 700;
+            color: #1e293b;
         }
-        .form-group input:focus,
-        .form-group textarea:focus {
-            outline: none;
-            border-color: #2d5a87;
-        }
-        .form-group textarea {
-            font-family: 'Consolas', 'Monaco', monospace;
-            min-height: 300px;
-            resize: vertical;
-        }
-        .form-group .hint {
-            font-size: 12px;
+        .stat-card.breaking .stat-value { color: #dc2626; }
+        .stat-card .stat-label {
+            font-size: 13px;
             color: #64748b;
             margin-top: 4px;
         }
+        .stats-refresh {
+            font-size: 12px;
+            color: #94a3b8;
+        }
+
+        /* ============================================
+           TABLAS
+           ============================================ */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .data-table th, .data-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        .data-table th {
+            background: #f8fafc;
+            font-weight: 600;
+            color: #475569;
+            font-size: 13px;
+        }
+        .data-table tr:hover { background: #f8fafc; }
+
+        /* ============================================
+           BADGES
+           ============================================ */
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .badge-basic { background: #f1f5f9; color: #475569; }
+        .badge-pro { background: #dbeafe; color: #1d4ed8; }
+        .badge-business { background: #fef3c7; color: #b45309; }
+        .badge-success { background: #dcfce7; color: #166534; }
+        .badge-error { background: #fee2e2; color: #991b1b; }
+        .badge-active { background: #dcfce7; color: #166534; }
+        .badge-inactive { background: #f1f5f9; color: #64748b; }
+
+        /* ============================================
+           BOTONES
+           ============================================ */
         .btn {
-            padding: 10px 20px;
+            padding: 8px 16px;
             border: none;
             border-radius: 6px;
             font-size: 14px;
@@ -107,99 +194,199 @@
             color: white;
         }
         .btn-primary:hover { background: #1e3a5f; }
-        .btn-primary:disabled { background: #94a3b8; cursor: not-allowed; }
         .btn-secondary {
             background: #e2e8f0;
             color: #334155;
         }
         .btn-secondary:hover { background: #cbd5e1; }
-        .result-box {
-            margin-top: 24px;
-            display: none;
-            border: 1px solid #cbd5e1;
-            border-radius: 8px;
-            overflow: hidden;
+        .btn-sm {
+            padding: 4px 12px;
+            font-size: 12px;
         }
-        .result-box.visible { display: block; }
-        .confidence-bar {
-            height: 24px;
-            background: #e2e8f0;
-            border-radius: 4px;
-            overflow: hidden;
-            margin: 12px 0;
+        .btn-danger {
+            background: #fee2e2;
+            color: #dc2626;
         }
-        .confidence-fill {
-            height: 100%;
-            transition: width 0.5s ease, background-color 0.3s;
-        }
-        .confidence-high { background: #22c55e; }
-        .confidence-medium { background: #f59e0b; }
-        .confidence-low { background: #ef4444; }
-        .selectors-grid {
-            display: grid;
-            grid-template-columns: 140px 1fr;
-            gap: 8px;
-            margin: 16px 0;
-            font-size: 13px;
-        }
-        .selectors-grid .key {
-            background: #f1f5f9;
-            padding: 8px 12px;
-            border-radius: 4px;
+
+        /* ============================================
+           FORMULARIOS
+           ============================================ */
+        .form-group { margin-bottom: 16px; }
+        .form-group label {
+            display: block;
             font-weight: 500;
-            color: #475569;
+            margin-bottom: 6px;
+            color: #334155;
+            font-size: 14px;
         }
-        .selectors-grid .value {
-            padding: 8px 12px;
-            background: white;
-            border: 1px solid #e2e8f0;
-            border-radius: 4px;
-            font-family: monospace;
-            word-break: break-all;
-        }
-        .sample-preview {
-            background: #f8fafc;
-            padding: 16px;
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #cbd5e1;
             border-radius: 6px;
+            font-size: 14px;
+        }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: #2d5a87;
+        }
+
+        /* ============================================
+           SELECTS EN LÍNEA (PARA EDICIÓN)
+           ============================================ */
+        .inline-select {
+            padding: 6px 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 4px;
+            font-size: 13px;
+            background: white;
+        }
+
+        /* ============================================
+           TOGGLE SWITCH
+           ============================================ */
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 44px;
+            height: 24px;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: #cbd5e1;
+            border-radius: 24px;
+            transition: 0.3s;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background: white;
+            border-radius: 50%;
+            transition: 0.3s;
+        }
+        .toggle-switch input:checked + .toggle-slider {
+            background: #22c55e;
+        }
+        .toggle-switch input:checked + .toggle-slider:before {
+            transform: translateX(20px);
+        }
+
+        /* ============================================
+           MODAL
+           ============================================ */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: white;
+            border-radius: 12px;
+            padding: 32px;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+        }
+        .modal h3 {
+            font-size: 20px;
+            margin-bottom: 16px;
+            color: #1e293b;
+        }
+        .modal .api-key-display {
+            background: #f1f5f9;
+            padding: 16px;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 14px;
+            word-break: break-all;
+            margin: 16px 0;
+            border: 2px dashed #cbd5e1;
+        }
+        .modal .warning {
+            background: #fef3c7;
+            color: #92400e;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            margin: 16px 0;
+        }
+        .modal .btn-close {
             margin-top: 16px;
         }
-        .sample-preview h4 {
-            font-size: 14px;
-            color: #64748b;
-            margin-bottom: 8px;
+
+        /* ============================================
+           FORMULARIO NUEVO CLIENTE (INLINE)
+           ============================================ */
+        .new-client-form {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+            margin-bottom: 20px;
+            padding: 16px;
+            background: #f8fafc;
+            border-radius: 8px;
         }
-        .sample-preview .title {
-            font-size: 16px;
-            font-weight: 600;
-            color: #1e293b;
-            margin-bottom: 8px;
+        .new-client-form .form-group {
+            margin-bottom: 0;
+            flex: 1;
         }
-        .sample-preview .meta {
-            font-size: 12px;
-            color: #64748b;
+
+        /* ============================================
+           AUTENTICACIÓN INICIAL
+           ============================================ */
+        .auth-required {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 60vh;
         }
-        .sample-preview .meta span { margin-right: 16px; }
+        .auth-box {
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 400px;
+        }
+        .auth-box input {
+            margin: 20px 0;
+        }
+
+        /* ============================================
+           ALERTAS Y MENSAJES
+           ============================================ */
         .alert {
             padding: 12px 16px;
             border-radius: 6px;
             margin-top: 12px;
             font-size: 14px;
         }
-        .alert-warning {
-            background: #fef3c7;
-            border: 1px solid #f59e0b;
-            color: #92400e;
-        }
-        .alert-success {
-            background: #dcfce7;
-            border: 1px solid #22c55e;
-            color: #166534;
-        }
-        .alert-error {
-            background: #fee2e2;
-            border: 1px solid #ef4444;
-            color: #991b1b;
-        }
+        .alert-warning { background: #fef3c7; color: #92400e; }
+        .alert-success { background: #dcfce7; color: #166534; }
+        .alert-error { background: #fee2e2; color: #991b1b; }
+
         .loading {
             display: none;
             text-align: center;
@@ -216,145 +403,312 @@
             margin: 0 auto 12px;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
-        .sources-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 16px;
-        }
-        .sources-table th, .sources-table td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #e2e8f0;
-        }
-        .sources-table th {
-            background: #f8fafc;
-            font-weight: 600;
-            color: #475569;
-        }
-        .sources-table tr:hover { background: #f8fafc; }
-        .badge {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 11px;
-            font-weight: 600;
-        }
-        .badge-high { background: #dcfce7; color: #166534; }
-        .badge-medium { background: #fef3c7; color: #92400e; }
-        .badge-low { background: #fee2e2; color: #991b1b; }
-        .actions { display: flex; gap: 8px; }
-        .actions button {
-            padding: 4px 12px;
-            font-size: 12px;
-            border: 1px solid #cbd5e1;
-            border-radius: 4px;
-            background: white;
-            cursor: pointer;
-        }
-        .actions button:hover { background: #f1f5f9; }
-        .sources-list { margin-top: 16px; }
-        .empty-state {
-            text-align: center;
-            padding: 32px;
-            color: #64748b;
-        }
-        #admin_secret {
-            width: 100%;
-            padding: 10px 12px;
-            border: 1px solid #cbd5e1;
-            border-radius: 6px;
-            margin-bottom: 16px;
+
+        /* ============================================
+           RESPONSIVE
+           ============================================ */
+        @media (max-width: 768px) {
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .nav-tabs { flex-wrap: wrap; }
+            .new-client-form { flex-direction: column; }
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>Byline Admin - Source Profiler</h1>
-        <p>Sistema de detección automática de selectores CSS para scraping de noticias</p>
-    </div>
-
-    <div class="container">
-        <div class="card">
-            <h2>Autenticación</h2>
-            <input type="password" id="admin_secret" placeholder="Admin Secret">
-        </div>
-
-        <div class="card">
-            <h2>Agregar Fuente</h2>
-
-            <div class="tabs">
-                <button class="tab active" data-tab="tab-rss">Con RSS</button>
-                <button class="tab" data-tab="tab-html">Con HTML</button>
-            </div>
-
-            <!-- Tab RSS -->
-            <div id="tab-rss" class="tab-content active">
-                <div class="form-group">
-                    <label for="rss_name">Nombre de la fuente</label>
-                    <input type="text" id="rss_name" placeholder="ej: El País">
-                </div>
-                <div class="form-group">
-                    <label for="rss_url">URL del RSS</label>
-                    <input type="url" id="rss_url" placeholder="https://feeds.elpais.com/...">
-                </div>
-                <div class="form-group">
-                    <label for="rss_category">Categoría (opcional)</label>
-                    <input type="text" id="rss_category" placeholder="ej: tecnologia">
-                </div>
-                <button class="btn btn-primary" id="btn-add-rss">Agregar fuente RSS</button>
-                <div id="rss-result" class="result-box"></div>
-            </div>
-
-            <!-- Tab HTML -->
-            <div id="tab-html" class="tab-content">
-                <div class="form-group">
-                    <label for="html_source_name">Nombre de la fuente</label>
-                    <input type="text" id="html_source_name" placeholder="ej: BBC News">
-                </div>
-                <div class="form-group">
-                    <label for="html_source_url">URL principal de la fuente</label>
-                    <input type="url" id="html_source_url" placeholder="https://www.bbc.com">
-                    <p class="hint">URL de la página principal de la fuente (no de un artículo específico)</p>
-                </div>
-                <div class="form-group">
-                    <label for="html_category">Categoría (opcional)</label>
-                    <input type="text" id="html_category" placeholder="ej: internacional">
-                </div>
-                <div class="form-group">
-                    <label for="html_code">Código HTML del artículo</label>
-                    <textarea id="html_code" placeholder="Pega aquí el código HTML de un artículo..."></textarea>
-                    <p class="hint">
-                        Abre cualquier artículo de esa fuente en tu navegador,
-                        presiona Ctrl+U (o Cmd+Option+U en Mac) para ver el código fuente,
-                        selecciona todo (Ctrl+A), cópialo (Ctrl+C) y pégalo aquí.
-                    </p>
-                </div>
-                <button class="btn btn-primary" id="btn-analyze-html">Analizar y guardar fuente</button>
-
-                <div id="html-loading" class="loading">
-                    <div class="spinner"></div>
-                    <p>Analizando HTML...</p>
-                </div>
-
-                <div id="html-result" class="result-box"></div>
-            </div>
-        </div>
-
-        <div class="card">
-            <h2>Fuentes configuradas</h2>
-            <div class="sources-list" id="sources-list">
-                <div class="empty-state">Cargando fuentes...</div>
-            </div>
+    <!-- ============================================
+         MODAL DE AUTENTICACIÓN (INICIAL)
+         ============================================ -->
+    <div id="auth-modal" class="modal-overlay active">
+        <div class="auth-box">
+            <h2>🔐 Byline Admin</h2>
+            <p>Ingresa el Admin Secret para acceder al panel</p>
+            <input type="password" id="admin_secret" placeholder="Admin Secret" style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px;">
+            <button class="btn btn-primary" id="btn-auth" style="width: 100%;">Acceder</button>
+            <p id="auth-error" style="color: #dc2626; margin-top: 12px; display: none;"></p>
         </div>
     </div>
 
+    <!-- ============================================
+         MODAL DE API KEY (AL CREAR CLIENTE)
+         ============================================ -->
+    <div id="api-key-modal" class="modal-overlay">
+        <div class="modal">
+            <h3>✅ Cliente creado correctamente</h3>
+            <p>Esta es tu <strong>API Key</strong>:</p>
+            <div class="api-key-display" id="new-api-key"></div>
+            <div class="warning">
+                ⚠️ <strong>IMPORTANTE:</strong> Guarda esta key ahora. 
+                No se mostrará de nuevo. Perderla significa perder el acceso.
+            </div>
+            <button class="btn btn-primary btn-close" onclick="closeApiKeyModal()">La copié, cerrar</button>
+        </div>
+    </div>
+
+    <!-- ============================================
+         HEADER PRINCIPAL
+         ============================================ -->
+    <div class="header" id="main-header" style="display: none;">
+        <div>
+            <h1>Byline Admin</h1>
+            <p>Panel de administración del sistema de noticias</p>
+        </div>
+        <div class="header-right">
+            <span class="admin-secret-display">🔒 Admin conectado</span>
+            <button class="btn btn-secondary btn-sm" onclick="logout()">Cerrar</button>
+        </div>
+    </div>
+
+    <!-- ============================================
+         CONTENIDO PRINCIPAL
+         ============================================ -->
+    <div class="container" id="main-container" style="display: none;">
+        
+        <!-- NAVEGACIÓN POR TABS -->
+        <div class="nav-tabs">
+            <button class="nav-tab active" data-panel="dashboard">📊 Dashboard</button>
+            <button class="nav-tab" data-panel="clients">👥 Clientes</button>
+            <button class="nav-tab" data-panel="sources">📡 Fuentes</button>
+            <button class="nav-tab" data-panel="articles">📰 Artículos</button>
+            <button class="nav-tab" data-panel="logs">📋 Logs</button>
+        </div>
+
+        <!-- ============================================
+             PANEL DASHBOARD
+             ============================================ -->
+        <div id="panel-dashboard" class="panel active">
+            <div class="card">
+                <h2>
+                    Métricas del día
+                    <span class="stats-refresh" id="stats-time"></span>
+                </h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-articles">—</div>
+                        <div class="stat-label">Artículos hoy</div>
+                    </div>
+                    <div class="stat-card breaking">
+                        <div class="stat-value" id="stat-breaking">—</div>
+                        <div class="stat-label">Breaking news hoy</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-clients">—</div>
+                        <div class="stat-label">Clientes activos</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="stat-sources">—</div>
+                        <div class="stat-label">Fuentes activas</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================
+             PANEL CLIENTES
+             ============================================ -->
+        <div id="panel-clients" class="panel">
+            <div class="card">
+                <h2>Gestión de clientes</h2>
+                
+                <!-- Formulario para nuevo cliente -->
+                <div class="new-client-form">
+                    <div class="form-group">
+                        <label>Nombre del cliente</label>
+                        <input type="text" id="new-client-name" placeholder="ej: Cliente ABC">
+                    </div>
+                    <div class="form-group">
+                        <label>Plan</label>
+                        <select id="new-client-plan">
+                            <option value="basic">Basic</option>
+                            <option value="pro">Pro</option>
+                            <option value="business">Business</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" id="btn-create-client">Crear cliente</button>
+                </div>
+
+                <!-- Tabla de clientes -->
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Plan</th>
+                            <th>API Key</th>
+                            <th>Estado</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="clients-table-body">
+                        <tr><td colspan="5" style="text-align: center;">Cargando...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ============================================
+             PANEL FUENTES (EXISTENTE)
+             ============================================ -->
+        <div id="panel-sources" class="panel">
+            <div class="card">
+                <h2>Agregar Fuente</h2>
+                <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+                    <button class="btn btn-primary active" onclick="showSourceTab('rss')">Con RSS</button>
+                    <button class="btn btn-secondary" onclick="showSourceTab('html')">Con HTML</button>
+                </div>
+
+                <!-- RSS -->
+                <div id="source-rss">
+                    <div class="form-group">
+                        <label>Nombre de la fuente</label>
+                        <input type="text" id="rss_name" placeholder="ej: El País">
+                    </div>
+                    <div class="form-group">
+                        <label>URL del RSS</label>
+                        <input type="url" id="rss_url" placeholder="https://feeds.elpais.com/...">
+                    </div>
+                    <div class="form-group">
+                        <label>Categoría (opcional)</label>
+                        <input type="text" id="rss_category" placeholder="ej: tecnologia">
+                    </div>
+                    <button class="btn btn-primary" id="btn-add-rss">Agregar fuente RSS</button>
+                    <div id="rss-result"></div>
+                </div>
+
+                <!-- HTML -->
+                <div id="source-html" style="display: none;">
+                    <div class="form-group">
+                        <label>Nombre de la fuente</label>
+                        <input type="text" id="html_source_name" placeholder="ej: BBC News">
+                    </div>
+                    <div class="form-group">
+                        <label>URL principal</label>
+                        <input type="url" id="html_source_url" placeholder="https://www.bbc.com">
+                    </div>
+                    <div class="form-group">
+                        <label>Categoría (opcional)</label>
+                        <input type="text" id="html_category">
+                    </div>
+                    <div class="form-group">
+                        <label>Código HTML del artículo</label>
+                        <textarea id="html_code" rows="6" placeholder="Pega el código HTML de un artículo..."></textarea>
+                    </div>
+                    <button class="btn btn-primary" id="btn-analyze-html">Analizar y guardar</button>
+                    <div id="html-loading" class="loading">Analizando...</div>
+                    <div id="html-result"></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Fuentes configuradas</h2>
+                <div id="sources-list">
+                    <div class="loading visible"><div class="spinner"></div>Cargando...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============================================
+             PANEL ARTÍCULOS
+             ============================================ -->
+        <div id="panel-articles" class="panel">
+            <div class="card">
+                <h2>
+                    Artículos recientes
+                    <button class="btn btn-secondary btn-sm" onclick="loadArticles()">🔄 Actualizar</button>
+                </h2>
+                
+                <!-- Filtros -->
+                <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
+                    <div class="form-group" style="margin: 0;">
+                        <label style="font-size: 12px;">Categoría</label>
+                        <select id="filter-category" class="inline-select" onchange="loadArticles()">
+                            <option value="">Todas</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label style="font-size: 12px;">Solo breaking</label>
+                        <select id="filter-breaking" class="inline-select" onchange="loadArticles()">
+                            <option value="">Todos</option>
+                            <option value="true">Sí</option>
+                            <option value="false">No</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label style="font-size: 12px;">Estado</label>
+                        <select id="filter-status" class="inline-select" onchange="loadArticles()">
+                            <option value="">Todos</option>
+                            <option value="pending_normal">Normal</option>
+                            <option value="pending_breaking">Breaking</option>
+                            <option value="discarded">Descartado</option>
+                        </select>
+                    </div>
+                </div>
+
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Fuente</th>
+                            <th>Título</th>
+                            <th>Categoría</th>
+                            <th>Score</th>
+                            <th>Breaking</th>
+                            <th>Estado</th>
+                            <th>Fecha</th>
+                        </tr>
+                    </thead>
+                    <tbody id="articles-table-body">
+                        <tr><td colspan="8" style="text-align: center;">Cargando...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ============================================
+             PANEL LOGS
+             ============================================ -->
+        <div id="panel-logs" class="panel">
+            <div class="card">
+                <h2>
+                    Log de actividad
+                    <button class="btn btn-secondary btn-sm" onclick="loadLogs()">🔄 Actualizar</button>
+                </h2>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Acción</th>
+                            <th>Resultado</th>
+                            <th>Detalle</th>
+                            <th>Fecha</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logs-table-body">
+                        <tr><td colspan="4" style="text-align: center;">Cargando...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ============================================
+         JAVASCRIPT
+         ============================================ -->
     <script>
+        // ============================================
+        // CONFIGURACIÓN
+        // ============================================
         const API_BASE = window.location.origin;
+        let currentSecret = '';
 
+        // ============================================
+        // FUNCIONES DE AUTENTICACIÓN
+        // ============================================
+        
+        // Obtener secret desde sessionStorage o input
         function getSecret() {
-            return document.getElementById('admin_secret').value;
+            return currentSecret || document.getElementById('admin_secret').value;
         }
 
+        // Headers para todas las peticiones
         function headers() {
             return {
                 'Content-Type': 'application/json',
@@ -362,257 +716,436 @@
             };
         }
 
-        // Tabs
-        document.querySelectorAll('.tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-                tab.classList.add('active');
-                document.getElementById(tab.dataset.tab).classList.add('active');
+        // Guardar secret en sessionStorage
+        function saveSecret(secret) {
+            currentSecret = secret;
+            sessionStorage.setItem('admin_secret', secret);
+        }
+
+        // Verificar si hay secret guardada
+        function checkSavedSecret() {
+            const saved = sessionStorage.getItem('admin_secret');
+            if (saved) {
+                currentSecret = saved;
+                document.getElementById('admin_secret').value = saved;
+                verifySecret(saved);
+            }
+        }
+
+        // Verificar secret con la API
+        async function verifySecret(secret) {
+            try {
+                const res = await fetch(API_BASE + '/admin/stats', {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Admin-Secret': secret
+                    }
+                });
+                if (res.ok) {
+                    showMainUI(secret);
+                } else {
+                    document.getElementById('auth-error').style.display = 'block';
+                    document.getElementById('auth-error').textContent = 'Admin Secret inválido';
+                }
+            } catch (e) {
+                document.getElementById('auth-error').style.display = 'block';
+                document.getElementById('auth-error').textContent = 'Error de conexión';
+            }
+        }
+
+        // Mostrar UI principal
+        function showMainUI(secret) {
+            document.getElementById('auth-modal').classList.remove('active');
+            document.getElementById('main-header').style.display = 'flex';
+            document.getElementById('main-container').style.display = 'block';
+            saveSecret(secret);
+            loadDashboard();
+        }
+
+        // Cerrar sesión
+        function logout() {
+            sessionStorage.removeItem('admin_secret');
+            currentSecret = '';
+            location.reload();
+        }
+
+        // ============================================
+        // NAVEGACIÓN POR TABS
+        // ============================================
+        
+        document.querySelectorAll('.nav-tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                // Quitar active de todos
+                document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+                
+                // Activar el seleccionado
+                this.classList.add('active');
+                document.getElementById('panel-' + this.dataset.panel).classList.add('active');
+                
+                // Cargar datos según el panel
+                const panel = this.dataset.panel;
+                if (panel === 'dashboard') loadDashboard();
+                else if (panel === 'clients') loadClients();
+                else if (panel === 'sources') loadSources();
+                else if (panel === 'articles') loadArticles();
+                else if (panel === 'logs') loadLogs();
             });
         });
 
+        // ============================================
+        // DASHBOARD
+        // ============================================
+        
+        async function loadDashboard() {
+            try {
+                const res = await fetch(API_BASE + '/admin/stats', { headers: headers() });
+                if (!res.ok) throw new Error();
+                const data = await res.json();
+                
+                document.getElementById('stat-articles').textContent = data.articles_today;
+                document.getElementById('stat-breaking').textContent = data.breaking_today;
+                document.getElementById('stat-clients').textContent = data.active_clients;
+                document.getElementById('stat-sources').textContent = data.active_sources;
+                
+                const now = new Date();
+                document.getElementById('stats-time').textContent = 'Actualizado: ' + now.toLocaleTimeString();
+            } catch (e) {
+                console.error('Error cargando stats:', e);
+            }
+        }
+
+        // ============================================
+        // CLIENTES
+        // ============================================
+        
+        async function loadClients() {
+            const tbody = document.getElementById('clients-table-body');
+            try {
+                const res = await fetch(API_BASE + '/admin/clients', { headers: headers() });
+                if (!res.ok) throw new Error();
+                const clients = await res.json();
+                
+                if (!clients.length) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">No hay clientes</td></tr>';
+                    return;
+                }
+                
+                tbody.innerHTML = clients.map(c => `
+                    <tr>
+                        <td>${c.name}</td>
+                        <td><span class="badge badge-${c.plan}">${c.plan.toUpperCase()}</span></td>
+                        <td>...${c.api_key ? c.api_key.slice(-6) : '—'}</td>
+                        <td>
+                            <label class="toggle-switch">
+                                <input type="checkbox" ${c.is_active ? 'checked' : ''} 
+                                    onchange="toggleClientActive(${c.id}, this.checked)">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </td>
+                        <td>
+                            <select class="inline-select" onchange="changeClientPlan(${c.id}, this.value)">
+                                <option value="basic" ${c.plan === 'basic' ? 'selected' : ''}>Basic</option>
+                                <option value="pro" ${c.plan === 'pro' ? 'selected' : ''}>Pro</option>
+                                <option value="business" ${c.plan === 'business' ? 'selected' : ''}>Business</option>
+                            </select>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: red;">Error cargando clientes</td></tr>';
+            }
+        }
+
+        // Crear nuevo cliente
+        document.getElementById('btn-create-client').addEventListener('click', async function() {
+            const name = document.getElementById('new-client-name').value.trim();
+            const plan = document.getElementById('new-client-plan').value;
+            
+            if (!name) {
+                alert('El nombre es obligatorio');
+                return;
+            }
+            
+            this.disabled = true;
+            this.textContent = 'Creando...';
+            
+            try {
+                const res = await fetch(API_BASE + '/admin/clients', {
+                    method: 'POST',
+                    headers: headers(),
+                    body: JSON.stringify({ name, plan })
+                });
+                
+                if (!res.ok) throw new Error((await res.json()).detail || 'Error');
+                
+                const data = await res.json();
+                
+                // Mostrar modal con API key
+                document.getElementById('new-api-key').textContent = data.api_key;
+                document.getElementById('api-key-modal').classList.add('active');
+                
+                // Limpiar formulario
+                document.getElementById('new-client-name').value = '';
+                
+                // Recargar tabla
+                loadClients();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            } finally {
+                this.disabled = false;
+                this.textContent = 'Crear cliente';
+            }
+        });
+
+        // Cerrar modal de API key
+        function closeApiKeyModal() {
+            document.getElementById('api-key-modal').classList.remove('active');
+        }
+
+        // Cambiar plan de cliente
+        async function changeClientPlan(clientId, newPlan) {
+            try {
+                const res = await fetch(API_BASE + '/admin/clients/' + clientId, {
+                    method: 'PATCH',
+                    headers: headers(),
+                    body: JSON.stringify({ plan: newPlan })
+                });
+                if (!res.ok) throw new Error();
+                loadClients();
+            } catch (e) {
+                alert('Error al cambiar plan');
+                loadClients();
+            }
+        }
+
+        // Activar/desactivar cliente
+        async function toggleClientActive(clientId, isActive) {
+            try {
+                const res = await fetch(API_BASE + '/admin/clients/' + clientId, {
+                    method: 'PATCH',
+                    headers: headers(),
+                    body: JSON.stringify({ is_active: isActive })
+                });
+                if (!res.ok) throw new Error();
+            } catch (e) {
+                alert('Error al cambiar estado');
+                loadClients();
+            }
+        }
+
+        // ============================================
+        // FUENTES
+        // ============================================
+        
+        function showSourceTab(tab) {
+            document.getElementById('source-rss').style.display = tab === 'rss' ? 'block' : 'none';
+            document.getElementById('source-html').style.display = tab === 'html' ? 'block' : 'none';
+        }
+
         // Agregar fuente RSS
-        document.getElementById('btn-add-rss').addEventListener('click', async () => {
+        document.getElementById('btn-add-rss').addEventListener('click', async function() {
             const name = document.getElementById('rss_name').value.trim();
             const rssUrl = document.getElementById('rss_url').value.trim();
             const category = document.getElementById('rss_category').value.trim();
-
+            
             if (!name || !rssUrl) {
-                showResult('rss-result', 'error', 'Nombre y URL RSS son obligatorios.');
+                document.getElementById('rss-result').innerHTML = '<div class="alert alert-error">Nombre y URL son obligatorios</div>';
                 return;
             }
-
+            
             try {
                 const res = await fetch(API_BASE + '/admin/sources', {
                     method: 'POST',
                     headers: headers(),
                     body: JSON.stringify({ name, rss_url: rssUrl, category: category || null })
                 });
-
                 if (!res.ok) throw new Error((await res.json()).detail || 'Error');
-
-                showResult('rss-result', 'success', `Fuente "${name}" agregada correctamente.`);
+                
+                document.getElementById('rss-result').innerHTML = '<div class="alert alert-success">Fuente agregada correctamente</div>';
                 document.getElementById('rss_name').value = '';
                 document.getElementById('rss_url').value = '';
                 document.getElementById('rss_category').value = '';
                 loadSources();
             } catch (e) {
-                showResult('rss-result', 'error', e.message);
+                document.getElementById('rss-result').innerHTML = '<div class="alert alert-error">' + e.message + '</div>';
             }
         });
 
         // Analizar HTML
-        document.getElementById('btn-analyze-html').addEventListener('click', async () => {
+        document.getElementById('btn-analyze-html').addEventListener('click', async function() {
             const sourceName = document.getElementById('html_source_name').value.trim();
             const sourceUrl = document.getElementById('html_source_url').value.trim();
             const category = document.getElementById('html_category').value.trim();
             const htmlCode = document.getElementById('html_code').value.trim();
-
+            
             if (!sourceName || !sourceUrl || htmlCode.length < 100) {
-                showResult('html-result', 'error',
-                    'Completa el nombre, URL de la fuente y pega código HTML (mínimo 100 caracteres).');
+                document.getElementById('html-result').innerHTML = '<div class="alert alert-error">Completa todos los campos</div>';
                 return;
             }
-
+            
             document.getElementById('html-loading').classList.add('visible');
-            document.getElementById('html-result').classList.remove('visible');
-
+            
             try {
                 const res = await fetch(API_BASE + '/admin/sources/analyze-html', {
                     method: 'POST',
                     headers: headers(),
-                    body: JSON.stringify({
-                        html: htmlCode,
-                        source_url: sourceUrl,
-                        source_name: sourceName,
-                        category: category || null
-                    })
+                    body: JSON.stringify({ html: htmlCode, source_url: sourceUrl, source_name: sourceName, category: category || null })
                 });
-
-                if (!res.ok) {
-                    const err = await res.json();
-                    throw new Error(err.detail || 'Error en el análisis');
-                }
-
+                if (!res.ok) throw new Error((await res.json()).detail || 'Error');
+                
                 const data = await res.json();
-                showAnalyzeResult(data);
+                document.getElementById('html-result').innerHTML = '<div class="alert alert-success">Fuente creada con confianza: ' + (data.confidence_score * 100).toFixed(0) + '%</div>';
+                loadSources();
             } catch (e) {
-                showResult('html-result', 'error', e.message);
+                document.getElementById('html-result').innerHTML = '<div class="alert alert-error">' + e.message + '</div>';
             } finally {
                 document.getElementById('html-loading').classList.remove('visible');
             }
         });
 
-        function showAnalyzeResult(data) {
-            const box = document.getElementById('html-result');
-            box.classList.add('visible');
-
-            const confidence = data.confidence_score;
-            let confClass = 'confidence-low';
-            let confLabel = 'Baja';
-            if (confidence >= 0.8) { confClass = 'confidence-high'; confLabel = 'Alta'; }
-            else if (confidence >= 0.7) { confClass = 'confidence-medium'; confLabel = 'Media'; }
-
-            let warningHtml = '';
-            if (data.warning) {
-                warningHtml = `<div class="alert alert-warning">${data.warning}</div>`;
-            }
-
-            let successHtml = '';
-            if (data.source_id) {
-                successHtml = `<div class="alert alert-success">
-                    Fuente guardada correctamente (ID: ${data.source_id})
-                </div>`;
-            }
-
-            box.innerHTML = `
-                <div style="padding: 16px;">
-                    <h3 style="margin-bottom: 12px;">Resultado del análisis</h3>
-
-                    <div style="margin-bottom: 16px;">
-                        <label style="font-weight: 500;">Confianza del perfil</label>
-                        <div class="confidence-bar">
-                            <div class="confidence-fill ${confClass}" style="width: ${(confidence * 100).toFixed(0)}%"></div>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #64748b;">
-                            <span>${(confidence * 100).toFixed(0)}% - ${confLabel}</span>
-                            <span>Umbral para guardado automático: 70%</span>
-                        </div>
-                    </div>
-
-                    ${warningHtml}
-                    ${successHtml}
-
-                    <div class="selectors-grid">
-                        <div class="key">title_selector</div>
-                        <div class="value">${data.title_selector || '—'}</div>
-
-                        <div class="key">body_selector</div>
-                        <div class="value">${data.body_selector || '—'}</div>
-
-                        <div class="key">image_selector</div>
-                        <div class="value">${data.image_selector || '—'}</div>
-
-                        <div class="key">date_selector</div>
-                        <div class="value">${data.date_selector || '—'}</div>
-
-                        <div class="key">author_selector</div>
-                        <div class="value">${data.author_selector || '—'}</div>
-                    </div>
-
-                    ${data.sample_extraction && (data.sample_extraction.title || data.sample_extraction.image_url) ? `
-                    <div class="sample-preview">
-                        <h4>Vista previa de la extracción</h4>
-                        ${data.sample_extraction.title ? `<div class="title">${data.sample_extraction.title}</div>` : ''}
-                        <div class="meta">
-                            ${data.sample_extraction.date ? `<span>📅 ${data.sample_extraction.date}</span>` : ''}
-                            ${data.sample_extraction.image_url ? `<span>🖼 Imagen detectada</span>` : ''}
-                        </div>
-                    </div>
-                    ` : ''}
-                </div>
-            `;
-
-            loadSources();
-        }
-
-        function showResult(boxId, type, message) {
-            const box = document.getElementById(boxId);
-            box.classList.add('visible');
-            const cls = type === 'error' ? 'alert-error' : (type === 'success' ? 'alert-success' : 'alert-warning');
-            box.innerHTML = `<div class="alert ${cls}">${message}</div>`;
-        }
-
         // Cargar fuentes
         async function loadSources() {
             const list = document.getElementById('sources-list');
             try {
-                const res = await fetch(API_BASE + '/admin/sources', {
-                    headers: headers()
-                });
+                const res = await fetch(API_BASE + '/admin/sources', { headers: headers() });
                 if (!res.ok) throw new Error();
-
                 const sources = await res.json();
+                
                 if (!sources.length) {
-                    list.innerHTML = '<div class="empty-state">No hay fuentes configuradas aún.</div>';
+                    list.innerHTML = '<div class="empty-state">No hay fuentes configuradas</div>';
                     return;
                 }
-
-                // Cargar perfiles para cada fuente
-                const sourcesWithProfiles = await Promise.all(sources.map(async (s) => {
-                    try {
-                        const res = await fetch(API_BASE + '/admin/sources/' + s.id + '/profile', {
-                            headers: headers()
-                        });
-                        if (res.ok) {
-                            s.profile = await res.json();
-                        }
-                    } catch {}
-                    return s;
-                }));
-
+                
                 list.innerHTML = `
-                    <table class="sources-table">
+                    <table class="data-table">
                         <thead>
-                            <tr>
-                                <th>Nombre</th>
-                                <th>URL</th>
-                                <th>Categoría</th>
-                                <th>Confianza</th>
-                                <th>Acciones</th>
-                            </tr>
+                            <tr><th>Nombre</th><th>URL</th><th>Categoría</th><th>Acciones</th></tr>
                         </thead>
                         <tbody>
-                            ${sourcesWithProfiles.map(s => {
-                                const conf = s.profile ? s.profile.confidence_score : 0;
-                                let badge = '';
-                                let badgeClass = 'badge-low';
-                                if (conf >= 0.8) badgeClass = 'badge-high';
-                                else if (conf >= 0.7) badgeClass = 'badge-medium';
-                                if (s.profile) badge = `<span class="badge ${badgeClass}">${(conf * 100).toFixed(0)}%</span>`;
-
-                                return `
-                                    <tr>
-                                        <td>${s.name}</td>
-                                        <td><a href="${s.url || s.rss_url}" target="_blank">${s.url || s.rss_url}</a></td>
-                                        <td>${s.category || '—'}</td>
-                                        <td>${badge || 'Sin perfil'}</td>
-                                        <td class="actions">
-                                            ${s.profile ? `
-                                                <button onclick="verifyProfile(${s.id})">Verificar</button>
-                                            ` : ''}
-                                        </td>
-                                    </tr>
-                                `;
-                            }).join('')}
+                            ${sources.map(s => `
+                                <tr>
+                                    <td>${s.name}</td>
+                                    <td><a href="${s.url || s.rss_url}" target="_blank">${s.url || s.rss_url}</a></td>
+                                    <td>${s.category || '—'}</td>
+                                    <td><button class="btn btn-danger btn-sm" onclick="deleteSource(${s.id})">Eliminar</button></td>
+                                </tr>
+                            `).join('')}
                         </tbody>
                     </table>
                 `;
             } catch (e) {
-                list.innerHTML = '<div class="empty-state">Error cargando fuentes.</div>';
+                list.innerHTML = '<div class="empty-state">Error cargando fuentes</div>';
             }
         }
 
-        // Verificar perfil
-        async function verifyProfile(sourceId) {
+        // Eliminar fuente
+        async function deleteSource(sourceId) {
+            if (!confirm('¿Desactivar esta fuente?')) return;
             try {
-                const res = await fetch(API_BASE + '/admin/sources/' + sourceId + '/verify-profile', {
-                    method: 'POST',
+                const res = await fetch(API_BASE + '/admin/sources/' + sourceId, {
+                    method: 'DELETE',
                     headers: headers()
                 });
                 if (!res.ok) throw new Error();
-                const data = await res.json();
-                alert(data.success
-                    ? `✓ Perfil verificado: "${data.title}"\n${data.message}`
-                    : `✗ Verificación fallida: ${data.message}`);
+                loadSources();
             } catch (e) {
-                alert('Error verificando el perfil.');
+                alert('Error al eliminar fuente');
             }
         }
 
-        // Cargar fuentes al inicio
-        loadSources();
+        // ============================================
+        // ARTÍCULOS
+        // ============================================
+        
+        async function loadArticles() {
+            const tbody = document.getElementById('articles-table-body');
+            const category = document.getElementById('filter-category').value;
+            const breaking = document.getElementById('filter-breaking').value;
+            const status = document.getElementById('filter-status').value;
+            
+            let url = API_BASE + '/admin/articles?limit=50';
+            if (category) url += '&category=' + encodeURIComponent(category);
+            if (breaking) url += '&is_breaking=' + breaking;
+            if (status) url += '&status=' + status;
+            
+            try {
+                const res = await fetch(url, { headers: headers() });
+                if (!res.ok) throw new Error();
+                const articles = await res.json();
+                
+                if (!articles.length) {
+                    tbody.innerHTML = '<tr><td colspan="8" style="text-align: center;">No hay artículos</td></tr>';
+                    return;
+                }
+                
+                tbody.innerHTML = articles.map(a => `
+                    <tr>
+                        <td>${a.id}</td>
+                        <td>${a.source_name}</td>
+                        <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;">${a.title}</td>
+                        <td>${a.category || '—'}</td>
+                        <td>${a.impact_score.toFixed(1)}</td>
+                        <td>${a.is_breaking ? '<span class="badge badge-error">Breaking</span>' : '—'}</td>
+                        <td><span class="badge badge-${a.status === 'pending_breaking' ? 'error' : 'success'}">${a.status}</span></td>
+                        <td>${new Date(a.created_at).toLocaleString()}</td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: red;">Error cargando artículos</td></tr>';
+            }
+        }
+
+        // ============================================
+        // LOGS
+        // ============================================
+        
+        async function loadLogs() {
+            const tbody = document.getElementById('logs-table-body');
+            try {
+                const res = await fetch(API_BASE + '/admin/logs?limit=100', { headers: headers() });
+                if (!res.ok) throw new Error();
+                const logs = await res.json();
+                
+                if (!logs.length) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">No hay logs</td></tr>';
+                    return;
+                }
+                
+                tbody.innerHTML = logs.map(log => `
+                    <tr>
+                        <td>${log.action}</td>
+                        <td><span class="badge badge-${log.result === 'success' ? 'success' : 'error'}">${log.result}</span></td>
+                        <td style="max-width: 300px;">${log.detail || '—'}</td>
+                        <td>${new Date(log.created_at).toLocaleString()}</td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: red;">Error cargando logs</td></tr>';
+            }
+        }
+
+        // ============================================
+        // INICIALIZACIÓN
+        // ============================================
+        
+        // Botón de autenticación
+        document.getElementById('btn-auth').addEventListener('click', function() {
+            const secret = document.getElementById('admin_secret').value.trim();
+            if (secret) {
+                verifySecret(secret);
+            }
+        });
+
+        // Permitir enter en el input de secret
+        document.getElementById('admin_secret').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                document.getElementById('btn-auth').click();
+            }
+        });
+
+        // Verificar si hay sesión guardada al cargar
+        checkSavedSecret();
     </script>
 </body>
 </html>

@@ -1,151 +1,187 @@
 /**
  * NWWP Admin JS
+ * Vanilla JS - Sin dependencias de jQuery
  *
  * @package NewsWire_WP
  */
 
-(function($) {
+(function() {
     'use strict';
 
     var NWWPSettings = {
-
         init: function() {
             this.bindVerifyConnection();
-            this.bindCategoryMapAdd();
-            this.bindCategoryMapRemove();
             this.bindMediaUploader();
         },
 
         bindVerifyConnection: function() {
-            $(document).on('click', '#nwwp-verify-btn', function(e) {
+            var verifyBtn = document.getElementById('nwwp-verify-btn');
+            var msgBox = document.getElementById('nwwp-verify-msg');
+
+            if (!verifyBtn || !msgBox) return;
+
+            verifyBtn.addEventListener('click', function(e) {
                 e.preventDefault();
 
-                var $btn     = $(this);
-                var $msgBox  = $('#nwwp-verify-msg');
-                var apiUrl   = $('#nwwp_api_url').val();
-                var apiKey   = $('#nwwp_api_key').val();
+                var apiUrlInput = document.getElementById('nwwp_api_url');
+                var apiKeyInput = document.getElementById('nwwp_api_key');
+
+                var apiUrl = apiUrlInput ? apiUrlInput.value.trim() : '';
+                var apiKey = apiKeyInput ? apiKeyInput.value.trim() : '';
 
                 if (!apiUrl || !apiKey) {
-                    $msgBox.html('<span style="color:#c62828;">Por favor, completa la URL y la API Key.</span>');
+                    msgBox.innerHTML = '<span style="color:#c62828;">Por favor, completa la URL y la API Key.</span>';
                     return;
                 }
 
-                $btn.prop('disabled', true).text('Verificando...');
-                $msgBox.html('');
+                var originalText = verifyBtn.textContent;
+                verifyBtn.disabled = true;
+                verifyBtn.textContent = 'Verificando...';
+                msgBox.innerHTML = '';
 
-                $.ajax({
-                    url: nwwpAdmin.ajaxUrl,
-                    type: 'POST',
-                    data: {
-                        action: 'nwwp_verify_connection',
-                        nonce: nwwpAdmin.nonce,
-                        api_url: apiUrl,
-                        api_key: apiKey
-                    },
-                    success: function(response) {
-                        if (response.success) {
-                            $msgBox.html(
-                                '<span style="color:#2e7d32;">' + response.data.message + '</span>'
-                            );
-                            NWWPSettings.actualizarUIsegunPlan(response.data.plan);
-                        } else {
-                            $msgBox.html(
-                                '<span style="color:#c62828;">' + response.data.message + '</span>'
-                            );
-                        }
-                    },
-                    error: function() {
-                        $msgBox.html('<span style="color:#c62828;">Error de conexión AJAX.</span>');
-                    },
-                    complete: function() {
-                        $btn.prop('disabled', false).text('Verificar conexión');
+                var formData = new FormData();
+                formData.append('action', 'nwwp_verify_connection');
+                formData.append('nonce', typeof nwwpAdmin !== 'undefined' ? nwwpAdmin.nonce : '');
+                formData.append('api_url', apiUrl);
+                formData.append('api_key', apiKey);
+
+                fetch(nwwpAdmin.ajaxUrl, {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(function(response) {
+                    return response.json();
+                })
+                .then(function(data) {
+                    if (data.success) {
+                        msgBox.innerHTML = '<span style="color:#2e7d32;">' + data.data.message + '</span>';
+                        NWWPSettings.actualizarUIsegunPlan(data.data.plan);
+                    } else {
+                        msgBox.innerHTML = '<span style="color:#c62828;">' + data.data.message + '</span>';
                     }
+                })
+                .catch(function() {
+                    msgBox.innerHTML = '<span style="color:#c62828;">Error de conexión AJAX.</span>';
+                })
+                .finally(function() {
+                    verifyBtn.disabled = false;
+                    verifyBtn.textContent = originalText;
                 });
             });
         },
 
         actualizarUIsegunPlan: function(plan) {
-            var $contentFull    = $('input[name="nwwp_content_mode"][value="full"]');
-            var $contentSummary  = $('input[name="nwwp_content_mode"][value="summary"]');
-            var $breakingCheck  = $('#nwwp_activar_breaking');
-            var $postsPerHour   = $('#nwwp_posts_per_hour');
-            var $noteBasic       = $('#nwwp-note-basic');
+            var contentFull = document.querySelector('input[name="nwwp_content_mode"][value="full"]');
+            var contentSummary = document.querySelector('input[name="nwwp_content_mode"][value="summary"]');
+            var breakingCheck = document.getElementById('nwwp_activar_breaking');
+            var postsPerHour = document.getElementById('nwwp_posts_per_hour');
 
-            if ('basic' === plan) {
-                $contentFull.prop('disabled', true)
-                    .closest('label').append('<span class="nwwp-disabled-note">Actualiza tu plan</span>');
-                $contentSummary.prop('disabled', true)
-                    .closest('label').append('<span class="nwwp-disabled-note">Actualiza tu plan</span>');
-                $breakingCheck.prop('disabled', true)
-                    .closest('label').append('<span class="nwwp-disabled-note">Solo disponible en plan Pro</span>');
-                $postsPerHour.attr('max', '2');
-                $noteBasic.show();
-            } else if ('pro' === plan || 'business' === plan) {
-                $contentFull.prop('disabled', false);
-                $contentSummary.prop('disabled', false);
-                $breakingCheck.prop('disabled', false);
-                $postsPerHour.attr('max', '999');
-                $noteBasic.hide();
+            if (plan === 'basic') {
+                if (contentFull) {
+                    contentFull.disabled = true;
+                    var fullLabel = contentFull.closest('label');
+                    if (fullLabel && !fullLabel.querySelector('.nwwp-disabled-note')) {
+                        var note = document.createElement('span');
+                        note.className = 'nwwp-disabled-note';
+                        note.textContent = 'Actualiza tu plan';
+                        fullLabel.appendChild(note);
+                    }
+                }
+                if (contentSummary) {
+                    contentSummary.disabled = true;
+                    var summaryLabel = contentSummary.closest('label');
+                    if (summaryLabel && !summaryLabel.querySelector('.nwwp-disabled-note')) {
+                        var note = document.createElement('span');
+                        note.className = 'nwwp-disabled-note';
+                        note.textContent = 'Actualiza tu plan';
+                        summaryLabel.appendChild(note);
+                    }
+                }
+                if (breakingCheck) {
+                    breakingCheck.disabled = true;
+                    var breakingLabel = breakingCheck.closest('label');
+                    if (breakingLabel && !breakingLabel.querySelector('.nwwp-disabled-note')) {
+                        var note = document.createElement('span');
+                        note.className = 'nwwp-disabled-note';
+                        note.textContent = 'Solo disponible en plan Pro';
+                        breakingLabel.appendChild(note);
+                    }
+                }
+                if (postsPerHour) {
+                    postsPerHour.setAttribute('max', '2');
+                }
+            } else if (plan === 'pro' || plan === 'business') {
+                if (contentFull) {
+                    contentFull.disabled = false;
+                    var fullLabel = contentFull.closest('label');
+                    var fullNote = fullLabel ? fullLabel.querySelector('.nwwp-disabled-note') : null;
+                    if (fullNote) fullNote.remove();
+                }
+                if (contentSummary) {
+                    contentSummary.disabled = false;
+                    var summaryLabel = contentSummary.closest('label');
+                    var summaryNote = summaryLabel ? summaryLabel.querySelector('.nwwp-disabled-note') : null;
+                    if (summaryNote) summaryNote.remove();
+                }
+                if (breakingCheck) {
+                    breakingCheck.disabled = false;
+                    var breakingLabel = breakingCheck.closest('label');
+                    var breakingNote = breakingLabel ? breakingLabel.querySelector('.nwwp-disabled-note') : null;
+                    if (breakingNote) breakingNote.remove();
+                }
+                if (postsPerHour) {
+                    postsPerHour.setAttribute('max', '999');
+                }
             }
         },
 
-        bindCategoryMapAdd: function() {
-            $(document).on('click', '#nwwp-add-category-row', function(e) {
-                e.preventDefault();
-                var $container = $('#nwwp-category-map-rows');
-                var $row = $container.find('.nwwp-category-map-row').first().clone();
-                $row.find('input').val('');
-                $row.find('select').val('');
-                $container.append($row);
-            });
-        },
-
-        bindCategoryMapRemove: function() {
-            $(document).on('click', '.nwwp-btn-remove', function(e) {
-                e.preventDefault();
-                var $row = $(this).closest('.nwwp-category-map-row');
-                if ($('#nwwp-category-map-rows .nwwp-category-map-row').length > 1) {
-                    $row.remove();
-                } else {
-                    $row.find('input').val('');
-                    $row.find('select').val('');
-                }
-            });
-        },
-
         bindMediaUploader: function() {
-            $(document).on('click', '#nwwp-upload-image-btn', function(e) {
-                e.preventDefault();
+            var uploadBtn = document.getElementById('nwwp-upload-image-btn');
+            var removeBtn = document.getElementById('nwwp-remove-image-btn');
+            var imageInput = document.getElementById('nwwp_default_image_id');
+            var imagePreview = document.getElementById('nwwp-image-preview');
 
-                var $preview = $('#nwwp-image-preview');
-                var $input   = $('#nwwp_default_image_id');
+            if (uploadBtn && typeof wp !== 'undefined' && wp.media) {
+                uploadBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
 
-                var mediaFrame = wp.media({
-                    title: 'Seleccionar imagen por defecto',
-                    button: { text: 'Usar imagen' },
-                    multiple: false,
-                    library: { type: 'image' }
+                    var mediaFrame = wp.media({
+                        title: 'Seleccionar imagen por defecto',
+                        button: { text: 'Usar imagen' },
+                        multiple: false,
+                        library: { type: 'image' }
+                    });
+
+                    mediaFrame.on('select', function() {
+                        var attachment = mediaFrame.state().get('selection').first().toJSON();
+                        if (imageInput) {
+                            imageInput.value = attachment.id;
+                        }
+                        if (imagePreview) {
+                            imagePreview.innerHTML = '<img src="' + attachment.url + '" style="max-width:200px;height:auto;" />';
+                        }
+                    });
+
+                    mediaFrame.open();
                 });
+            }
 
-                mediaFrame.on('select', function() {
-                    var attachment = mediaFrame.state().get('selection').first().toJSON();
-                    $input.val(attachment.id);
-                    $preview.html('<img src="' + attachment.url + '" style="max-width:200px;height:auto;" />');
+            if (removeBtn) {
+                removeBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    if (imageInput) {
+                        imageInput.value = '';
+                    }
+                    if (imagePreview) {
+                        imagePreview.innerHTML = '';
+                    }
                 });
-
-                mediaFrame.open();
-            });
-
-            $(document).on('click', '#nwwp-remove-image-btn', function(e) {
-                e.preventDefault();
-                $('#nwwp_default_image_id').val('');
-                $('#nwwp-image-preview').html('');
-            });
+            }
         }
     };
 
-    $(document).ready(function() {
+    document.addEventListener('DOMContentLoaded', function() {
         NWWPSettings.init();
     });
 
-})(jQuery);
+})();
