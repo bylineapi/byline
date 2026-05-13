@@ -205,36 +205,7 @@ async def update_client(
     )
 
 
-@app.patch("/me", response_model=ClientUpdateOut)
-async def update_me(
-    data: ClientUpdate,
-    client: Client = Depends(get_current_client),
-    db: AsyncSession = Depends(get_db),
-):
-    """
-    Actualiza el perfil del cliente autenticado.
-    Solo puede actualizar su nombre (no plan ni is_active).
-    El plan solo puede ser cambiado por el admin.
-    """
-    if data.name is not None:
-        client.name = data.name
 
-    if data.plan is not None:
-        raise HTTPException(
-            status_code=403,
-            detail="No tienes permiso para cambiar tu plan. Contacta al administrador."
-        )
-
-    await db.commit()
-    await db.refresh(client)
-
-    return ClientUpdateOut(
-        id=client.id,
-        name=client.name,
-        plan=client.plan.value,
-        is_active=client.is_active,
-        created_at=client.created_at,
-    )
 
 
 # ─── Admin: Fuentes RSS (continuación) ───────────────────────────────────────
