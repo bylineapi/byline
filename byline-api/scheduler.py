@@ -30,50 +30,56 @@ async def scraping_job(force_date: Optional[datetime] = None):
     Itera todas las fuentes activas, obtiene artículos nuevos via RSS,
     los puntúa y guarda en BD los que no sean 'discarded'.
     
+    IMPORTANTE: Usa sesiones de BD de corta duración para evitar timeouts.
+    
     Args:
         force_date: Si se proporciona, usa esta fecha para todos los artículos (solo para pruebas)
     """
     logger.info("Iniciando scraping_job...")
+    
+    # Sesión 1: Obtener fuentes activas
     async with get_session_maker() as db:
+        result = await db.execute(
+            select(Source).where(Source.is_active.is_(True))
+        )
+        fuentes = result.scalars().all()
+        
+        if not fuentes:
+            logger.info("No hay fuentes activas para scrapear.")
+            return
+        
+        # Obtener artículos recientes para scoring
+        hace_2h = datetime.utcnow() - timedelta(hours=2)
+        result_recent = await db.execute(
+            select(Article).where(Article.created_at >= hace_2h)
+        )
+        articulos_recientes = result_recent.scalars().all()
+    # La sesión se cierra aquí
+    
+    # Convertir a dicts para el scorer
+    articulos_recientes_dicts = [
+        {
+            "source_id": a.source_id,
+            "title": a.title,
+            "content": a.content,
+            "published_at": a.published_at or a.created_at,
+        }
+        for a in articulos_recientes
+    ]
+    
+    total_nuevos = 0
+    
+    # Procesar cada fuente con su propia sesión
+    for fuente in fuentes:
         try:
-            # Obtener fuentes activas
-            result = await db.execute(
-                select(Source).where(Source.is_active.is_(True))
-            )
-            fuentes = result.scalars().all()
-
-            if not fuentes:
-                logger.info("No hay fuentes activas para scrapear.")
-                return
-
-            # Obtener artículos de las últimas 2 horas para el trending
-            hace_2h = datetime.utcnow() - timedelta(hours=2)
-            result_recent = await db.execute(
-                select(Article).where(Article.created_at >= hace_2h)
-            )
-            articulos_recientes = result_recent.scalars().all()
-
-            # Convertir a dicts para el scorer
-            articulos_recientes_dicts = [
-                {
-                    "source_id": a.source_id,
-                    "title": a.title,
-                    "content": a.content,
-                    "published_at": a.published_at or a.created_at,
-                }
-                for a in articulos_recientes
-            ]
-
-            total_nuevos = 0
-
-            for fuente in fuentes:
-                # Obtener perfil de scraping de la fuente
+            # Sesión 2: Obtener perfil de la fuente
+            async with get_session_maker() as db:
                 result_profile = await db.execute(
                     select(SourceProfile).where(SourceProfile.source_id == fuente.id)
                 )
                 profile = result_profile.scalar_one_or_none()
                 profile_dict = None
-
+                
                 if profile and profile.confidence_score >= MIN_CONFIDENCE_FOR_PROFILER:
                     profile_dict = {
                         "title_selector": profile.title_selector,
@@ -83,119 +89,136 @@ async def scraping_job(force_date: Optional[datetime] = None):
                         "author_selector": profile.author_selector,
                         "confidence_score": profile.confidence_score,
                     }
-
-                try:
-                    articulos_crudos = await fetch_rss(fuente, profile_dict, force_date)
-                except Exception as e:
-                    logger.error(
-                        "Error scrapeando fuente '%s' (ID %d): %s",
-                        fuente.name, fuente.id, e,
-                    )
-                    continue
-
-                for data in articulos_crudos:
-                    try:
-                        logger.debug(
-                            "Procesando artículo: %s (source_id: %d)",
-                            data.get("title", "Sin título")[:80],
-                            data["source_id"]
-                        )
-                        
-                        # Verificar si ya existe por original_url
-                        existe = await db.execute(
-                            select(Article).where(
-                                Article.original_url == data["original_url"]
-                            )
-                        )
-                        if existe.scalar_one_or_none():
-                            logger.debug("Artículo duplicado, saltando: %s", data["original_url"][:80])
-                            continue
-
-                        # Puntuar
-                        score_final = scorer.score(data, articulos_recientes_dicts)
-                        data["impact_score"] = score_final
-                        logger.debug("Artículo puntuado con: %.2f", score_final)
-
-                        # Asignar estado según score
-                        if score_final >= 80:
-                            data["is_breaking"] = True
-                            data["status"] = ArticleStatusEnum.pending_breaking
-                        elif score_final >= 40:
-                            data["status"] = ArticleStatusEnum.pending_normal
-                        else:
-                            data["status"] = ArticleStatusEnum.discarded
-                            logger.debug("Artículo descartado (score bajo): %s", data.get("title", "")[:60])
-
-                        # Guardar solo no descartados
-                        if data["status"] != ArticleStatusEnum.discarded:
-                            article = Article(
-                                source_id=data["source_id"],
-                                title=data["title"],
-                                content=data["content"],
-                                excerpt=data.get("excerpt", ""),
-                                image_url=data.get("image_url"),
-                                original_url=data["original_url"],
-                                category=data.get("category"),
-                                impact_score=data["impact_score"],
-                                is_breaking=data["is_breaking"],
-                                status=data["status"],
-                                published_at=data.get("published_at"),
-                            )
-                            db.add(article)
-                            total_nuevos += 1
-                            logger.info(
-                                "✅ Artículo guardado: %s (score: %.2f, status: %s)",
-                                data.get("title", "")[:60],
-                                score_final,
-                                data["status"]
-                            )
-
-                            # Agregar a lista de recientes para próximos scores
-                            articulos_recientes_dicts.append({
-                                "source_id": data["source_id"],
-                                "title": data["title"],
-                                "content": data["content"],
-                                "published_at": data.get("published_at"),
-                            })
-
-                    except Exception as e:
-                        logger.error(
-                            "Error procesando artículo de '%s': %s",
-                            fuente.name, e,
-                        )
-                        continue
-
-            await db.commit()
-            logger.info(
-                "scraping_job completado: %d artículos nuevos guardados de %d fuentes",
-                total_nuevos, len(fuentes),
-            )
+            # La sesión se cierra aquí
             
-            # Guardar log de actividad en la base de datos
+            # Scraping de la fuente (puede tardar varios minutos)
+            articulos_crudos = await fetch_rss(fuente, profile_dict, force_date)
+            
+            if not articulos_crudos:
+                logger.info("Fuente %s: No se extrajeron artículos", fuente.name)
+                continue
+            
+            # Sesión 3: Guardar artículos encontrados
+            # IMPORTANTE: Abrir sesión DESPUÉS del scraping para evitar timeout
+            try:
+                async with get_session_maker() as db:
+                    for data in articulos_crudos:
+                        try:
+                            logger.debug(
+                                "Procesando artículo: %s (source_id: %d)",
+                                data.get("title", "Sin título")[:80],
+                                data["source_id"]
+                            )
+                            
+                            # Verificar si ya existe por original_url
+                            existe = await db.execute(
+                                select(Article).where(
+                                    Article.original_url == data["original_url"]
+                                )
+                            )
+                            if existe.scalar_one_or_none():
+                                logger.debug("Artículo duplicado, saltando: %s", data["original_url"][:80])
+                                continue
+
+                            # Puntuar
+                            score_final = scorer.score(data, articulos_recientes_dicts)
+                            data["impact_score"] = score_final
+                            logger.debug("Artículo puntuado con: %.2f", score_final)
+
+                            # Asignar estado según score
+                            if score_final >= 80:
+                                data["is_breaking"] = True
+                                data["status"] = ArticleStatusEnum.pending_breaking
+                            elif score_final >= 40:
+                                data["status"] = ArticleStatusEnum.pending_normal
+                            else:
+                                data["status"] = ArticleStatusEnum.discarded
+                                logger.debug("Artículo descartado (score bajo): %s", data.get("title", "")[:60])
+
+                            # Guardar solo no descartados
+                            if data["status"] != ArticleStatusEnum.discarded:
+                                article = Article(
+                                    source_id=data["source_id"],
+                                    title=data["title"],
+                                    content=data["content"],
+                                    excerpt=data.get("excerpt", ""),
+                                    image_url=data.get("image_url"),
+                                    original_url=data["original_url"],
+                                    category=data.get("category"),
+                                    impact_score=data["impact_score"],
+                                    is_breaking=data["is_breaking"],
+                                    status=data["status"],
+                                    published_at=data.get("published_at"),
+                                )
+                                db.add(article)
+                                total_nuevos += 1
+                                logger.info(
+                                    "✅ Artículo guardado: %s (score: %.2f, status: %s)",
+                                    data.get("title", "")[:60],
+                                    score_final,
+                                    data["status"]
+                                )
+
+                                # Agregar a lista de recientes para próximos scores
+                                articulos_recientes_dicts.append({
+                                    "source_id": data["source_id"],
+                                    "title": data["title"],
+                                    "content": data["content"],
+                                    "published_at": data.get("published_at"),
+                                })
+
+                        except Exception as e:
+                            logger.error(
+                                "Error procesando artículo de '%s': %s",
+                                fuente.name, e,
+                            )
+                            continue
+                    
+                    # Commit después de procesar todos los artículos de esta fuente
+                    await db.commit()
+                    logger.info(
+                        "Fuente %s: %d artículos nuevos guardados",
+                        fuente.name, total_nuevos
+                    )
+            except Exception as db_error:
+                logger.error(
+                    "Error de base de datos para fuente '%s': %s",
+                    fuente.name, db_error,
+                )
+                # Intentar rollback si la sesión aún es válida
+                try:
+                    await db.rollback()
+                except Exception:
+                    pass
+                continue
+        
+        except Exception as e:
+            logger.error(
+                "Error scrapeando fuente '%s' (ID %d): %s",
+                fuente.name, fuente.id, e,
+            )
+            import traceback
+            logger.error(traceback.format_exc())
+            continue
+    
+    # Log final del job
+    logger.info(
+        "scraping_job completado: %d artículos nuevos guardados de %d fuentes",
+        total_nuevos, len(fuentes),
+    )
+    
+    # Guardar log de actividad en la base de datos
+    try:
+        async with get_session_maker() as db_log:
             log_entry = ActivityLog(
                 action="scraping_job",
                 result="success",
                 detail=f"{total_nuevos} artículos nuevos encontrados. {len(fuentes)} fuentes procesadas."
             )
-            db.add(log_entry)
-            await db.commit()
-
-        except Exception as e:
-            logger.error("Error en scraping_job: %s", e)
-            await db.rollback()
-            
-            # Guardar log de error en la base de datos
-            try:
-                async with get_session_maker() as db_log:
-                    log_entry = ActivityLog(
-                        action="scraping_job",
-                        result="error",
-                        detail=f"Error: {str(e)}"
-                    )
-                    db_log.add(log_entry)
-                    await db_log.commit()
-            except Exception:
-                pass  # Si falla el logging, no interrumpir
+            db_log.add(log_entry)
+            await db_log.commit()
+    except Exception as log_error:
+        logger.error(f"Error guardando log: {log_error}")
 
 
 # ─── Job 2: Limpieza ─────────────────────────────────────────────────────────
