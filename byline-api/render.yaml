@@ -1,23 +1,17 @@
-# render.yaml - Configuración de despliegue en Render
+# render.yaml - Configuración de despliegue en Render (usa Neon externo)
 
 services:
   - type: web
     name: byline-api
     env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    region: oregon
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: news-db
-          property: connectionString
+        sync: false
       - key: ADMIN_SECRET
         sync: false
       - key: SECRET_KEY
-        generateValue: true
-
-databases:
-  - name: news-db
-    plan: free
-    databaseName: newsdb
-    ipAllowList: []
+        sync: false

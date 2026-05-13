@@ -2,6 +2,7 @@
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 import os
 from dotenv import load_dotenv
 
@@ -9,14 +10,13 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
-# Render entrega DATABASE_URL comenzando con postgres://
-# SQLAlchemy async requiere el formato postgresql+asyncpg://
-_engine = None
-_async_session_maker = None
-
 
 class Base(DeclarativeBase):
     pass
+
+
+_engine = None
+_async_session_maker = None
 
 
 def get_engine():
@@ -28,7 +28,12 @@ def get_engine():
             db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
         elif db_url and not db_url.startswith("postgresql+asyncpg://"):
             db_url = f"postgresql+asyncpg://{db_url.split('://', 1)[1]}"
-        _engine = create_async_engine(db_url, echo=False, pool_pre_ping=True)
+        _engine = create_async_engine(
+            db_url,
+            echo=False,
+            poolclass=NullPool,
+            connect_args={"ssl": True}
+        )
     return _engine
 
 

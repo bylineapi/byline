@@ -8,17 +8,19 @@ from typing import Optional
 
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, text
+from sqlalchemy.orm import joinedload
 
 from database import get_db, init_db
 from models import (
     Client, Source, Article, ClientArticle, SourceProfile,
-    PlanEnum, ArticleStatusEnum,
+    PlanEnum, ArticleStatusEnum, ActivityLog,
 )
 from schemas import (
     HealthOut, ClientCreate, ClientOut, ClientList,
+    ClientUpdate, ClientUpdateOut, StatsOut, LogOut, ArticleListItem,
     SourceCreate, SourceOut, ArticleOut,
     SourceProfileOut, AnalyzeHTMLIn, AnalyzeProfileOut,
     VerifyProfileOut, SampleExtraction,
@@ -71,10 +73,25 @@ app.add_middleware(
 
 # ─── Health ──────────────────────────────────────────────────────────────────
 
-@app.get("/health", response_model=HealthOut)
-async def health():
-    """Endpoint de verificación de salud del servicio."""
-    return HealthOut(status="ok")
+@app.get("/health")
+async def health_check(db: AsyncSession = Depends(get_db)):
+    """Endpoint de verificación de salud del servicio y conexión a Neon."""
+    try:
+        await db.execute(text("SELECT 1"))
+        return {
+            "status": "ok",
+            "database": "connected",
+            "version": "1.0.0"
+        }
+    except Exception as e:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "error",
+                "database": "disconnected",
+                "detail": str(e)
+            }
+        )
 
 
 # ─── Admin: Clientes ─────────────────────────────────────────────────────────
@@ -124,11 +141,58 @@ async def list_clients(
             is_active=c.is_active,
             created_at=c.created_at,
         )
-        for c in clients
+for c in clients
+        ]
     ]
 
 
-# ─── Inicialización del profiler global ──────────────────────────────────────
+@app.patch("/admin/clients/{client_id}", response_model=ClientUpdateOut)
+async def update_client(
+    client_id: int,
+    data: ClientUpdate,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(verify_admin_secret),
+):
+    """
+    Actualiza un cliente existente (partial update).
+    Solo actualiza los campos que se envíen en el body.
+    """
+    # Buscar cliente
+    result = await db.execute(select(Client).where(Client.id == client_id))
+    client = result.scalar_one_or_none()
+    
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    
+    # Actualizar solo los campos presentes
+    if data.name is not None:
+        client.name = data.name
+    
+    if data.plan is not None:
+        # Validar que el plan sea válido
+        if data.plan not in ["basic", "pro", "business"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Plan inválido. Debe ser: basic, pro o business"
+            )
+        client.plan = PlanEnum(data.plan)
+    
+    if data.is_active is not None:
+        client.is_active = data.is_active
+    
+    await db.commit()
+    await db.refresh(client)
+    
+    return ClientUpdateOut(
+        id=client.id,
+        name=client.name,
+        plan=client.plan.value,
+        is_active=client.is_active,
+        created_at=client.created_at,
+    )
+
+
+# ─── Admin: Fuentes RSS (continuación) ───────────────────────────────────────
 
 profiler = HTMLProfiler()
 
@@ -164,6 +228,29 @@ async def list_sources(
     result = await db.execute(select(Source).order_by(Source.created_at.desc()))
     sources = result.scalars().all()
     return [SourceOut.model_validate(s) for s in sources]
+
+
+@app.delete("/admin/sources/{source_id}")
+async def delete_source(
+    source_id: int,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(verify_admin_secret),
+):
+    """
+    Desactiva una fuente (soft delete).
+    No elimina el registro, solo pone is_active = False.
+    """
+    result = await db.execute(select(Source).where(Source.id == source_id))
+    source = result.scalar_one_or_none()
+    
+    if not source:
+        raise HTTPException(status_code=404, detail="Fuente no encontrada")
+    
+    # Soft delete: desactivar la fuente
+    source.is_active = False
+    await db.commit()
+    
+    return {"success": True, "message": "Fuente desactivada"}
 
 
 # ─── News ─────────────────────────────────────────────────────────────────────
@@ -202,6 +289,7 @@ async def get_news(
 
     query = (
         select(Article)
+        .options(joinedload(Article.source))  # Carga la relación source para evitar N+1
         .where(Article.status.in_(statuses))
         .order_by(desc(Article.impact_score), desc(Article.created_at))
     )
@@ -244,6 +332,7 @@ async def get_breaking_news(
 
     query = (
         select(Article)
+        .options(joinedload(Article.source))  # Carga la relación source para evitar N+1
         .where(Article.status == ArticleStatusEnum.pending_breaking)
         .order_by(desc(Article.impact_score), desc(Article.created_at))
         .limit(plan["posts_per_category_hour"])
@@ -419,6 +508,145 @@ async def verify_source_profile(
         message=mensaje,
         last_verified=datetime.utcnow(),
     )
+
+
+# ─── Admin: Stats ─────────────────────────────────────────────────────────────
+
+@app.get("/admin/stats", response_model=StatsOut)
+async def get_stats(
+    db: AsyncSession = Depends(get_db),
+    _=Depends(verify_admin_secret),
+):
+    """
+    Retorna métricas del día actual (desde medianoche).
+    """
+    # Obtener la fecha de hoy a medianoche
+    hoy = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    # Artículos de hoy (todos los statuses)
+    result_articles_today = await db.execute(
+        select(Article).where(Article.created_at >= hoy)
+    )
+    articles_today = len(result_articles_today.scalars().all())
+    
+    # Breaking news de hoy
+    result_breaking = await db.execute(
+        select(Article).where(
+            Article.created_at >= hoy,
+            Article.is_breaking.is_(True)
+        )
+    )
+    breaking_today = len(result_breaking.scalars().all())
+    
+    # Fuentes activas
+    result_sources = await db.execute(
+        select(Source).where(Source.is_active.is_(True))
+    )
+    active_sources = len(result_sources.scalars().all())
+    
+    # Total de clientes
+    result_total_clients = await db.execute(select(Client))
+    total_clients = len(result_total_clients.scalars().all())
+    
+    # Clientes activos
+    result_active_clients = await db.execute(
+        select(Client).where(Client.is_active.is_(True))
+    )
+    active_clients = len(result_active_clients.scalars().all())
+    
+    # Artículos descartados hoy
+    result_discarded = await db.execute(
+        select(Article).where(
+            Article.created_at >= hoy,
+            Article.status == ArticleStatusEnum.discarded
+        )
+    )
+    articles_discarded_today = len(result_discarded.scalars().all())
+    
+    return StatsOut(
+        articles_today=articles_today,
+        breaking_today=breaking_today,
+        active_sources=active_sources,
+        total_clients=total_clients,
+        active_clients=active_clients,
+        articles_discarded_today=articles_discarded_today,
+    )
+
+
+# ─── Admin: Logs ─────────────────────────────────────────────────────────────
+
+@app.get("/admin/logs", response_model=list[LogOut])
+async def get_logs(
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(verify_admin_secret),
+):
+    """
+    Retorna entradas de activity_logs.
+    """
+    result = await db.execute(
+        select(ActivityLog)
+        .order_by(ActivityLog.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    logs = result.scalars().all()
+    return [LogOut.model_validate(log) for log in logs]
+
+
+# ─── Admin: Articles ─────────────────────────────────────────────────────────
+
+@app.get("/admin/articles", response_model=list[ArticleListItem])
+async def get_admin_articles(
+    category: Optional[str] = Query(None),
+    is_breaking: Optional[bool] = Query(None),
+    status: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(verify_admin_secret),
+):
+    """
+    Retorna artículos con filtros opcionales.
+    Incluye datos de la fuente (source.name) en la respuesta.
+    """
+    # Construir query con filtros
+    query = (
+        select(Article)
+        .options(joinedload(Article.source))
+        .order_by(Article.created_at.desc())
+    )
+    
+    if category:
+        query = query.where(Article.category == category)
+    
+    if is_breaking is not None:
+        query = query.where(Article.is_breaking == is_breaking)
+    
+    if status:
+        query = query.where(Article.status == status)
+    
+    # Aplicar paginación
+    query = query.offset(offset).limit(limit)
+    
+    result = await db.execute(query)
+    articles = result.scalars().all()
+    
+    # Mapear artículos con nombre de fuente
+    return [
+        ArticleListItem(
+            id=a.id,
+            source_name=a.source.name if a.source else "Desconocida",
+            title=a.title,
+            category=a.category,
+            impact_score=a.impact_score,
+            is_breaking=a.is_breaking,
+            status=a.status.value if a.status else "unknown",
+            created_at=a.created_at,
+        )
+        for a in articles
+    ]
 
 
 # ─── Admin Panel HTML ─────────────────────────────────────────────────────────
