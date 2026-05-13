@@ -213,18 +213,17 @@ async def update_me(
 ):
     """
     Actualiza el perfil del cliente autenticado.
-    Solo puede actualizar name y plan (no is_active).
+    Solo puede actualizar su nombre (no plan ni is_active).
+    El plan solo puede ser cambiado por el admin.
     """
     if data.name is not None:
         client.name = data.name
 
     if data.plan is not None:
-        if data.plan not in ["basic", "pro", "business"]:
-            raise HTTPException(
-                status_code=400,
-                detail="Plan inválido. Debe ser: basic, pro o business"
-            )
-        client.plan = PlanEnum(data.plan)
+        raise HTTPException(
+            status_code=403,
+            detail="No tienes permiso para cambiar tu plan. Contacta al administrador."
+        )
 
     await db.commit()
     await db.refresh(client)
