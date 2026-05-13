@@ -19,6 +19,10 @@ logger = logging.getLogger(__name__)
 # Timeout para requests externas
 HTTP_TIMEOUT = 30
 
+# Delay entre extracción de artículos (segundos)
+# Para evitar ser bloqueado por los servidores fuente
+ARTICLE_DELAY_SECONDS = 15  # 15-20 segundos entre cada artículo
+
 # Confidence mínima para usar el profiler en vez de newspaper3k
 MIN_CONFIDENCE_FOR_PROFILER = 0.7
 
@@ -154,8 +158,10 @@ async def fetch_rss(source: Source, source_profile: Optional[dict] = None) -> li
 
     Si source_profile está disponible y tiene confidence >= 0.7,
     usa el Source Profiler en vez de newspaper3k para extraer contenido.
+    
+    IMPORTANTE: Agrega delay entre artículos para evitar bloqueos del servidor fuente.
     """
-    logger.info("Scraping fuente: %s (%s)", source.name, source.rss_url)
+    logger.info("📰 Scraping fuente: %s (%s)", source.name, source.rss_url)
     articulos_crudos = []
 
     # Determinar si usamos el profiler
@@ -176,19 +182,33 @@ async def fetch_rss(source: Source, source_profile: Optional[dict] = None) -> li
         loop = asyncio.get_running_loop()
 
         # Descargar y parsear RSS en un hilo separado (feedparser es síncrono)
+        logger.info("Descargando RSS de: %s", source.rss_url)
         feed = await loop.run_in_executor(
             None,
             lambda: feedparser.parse(source.rss_url),
         )
 
-        if feed.bozo and not feed.entries:
-            logger.error("Error parseando RSS de %s: %s", source.name, feed.bozo_exception)
+        if feed.bozo:
+            logger.warning("⚠️ Warning parseando RSS de %s: %s", source.name, feed.bozo_exception)
+        
+        if not feed.entries:
+            logger.warning("❌ No se encontraron entradas en RSS de %s", source.name)
             return articulos_crudos
+        
+        logger.info("✅ RSS parseado: %d entradas encontradas", len(feed.entries))
 
-        for entry in feed.entries:
+        for idx, entry in enumerate(feed.entries):
             original_url = entry.get("link", "").strip()
             if not original_url:
+                logger.debug("Entrada %d sin URL, saltando", idx + 1)
                 continue
+            
+            logger.info(
+                "📄 Procesando artículo %d/%d: %s",
+                idx + 1,
+                len(feed.entries),
+                original_url[:80]
+            )
 
             # Extraer datos según el método disponible
             if usar_profiler:
@@ -199,6 +219,7 @@ async def fetch_rss(source: Source, source_profile: Optional[dict] = None) -> li
                     datos_newspaper = datos_profiler
                 else:
                     # Profiler falló, intentar con newspaper como fallback
+                    logger.warning("Profiler falló, usando newspaper como fallback")
                     datos_newspaper = await loop.run_in_executor(
                         None, _extraer_con_newspaper, original_url
                     )
@@ -228,6 +249,11 @@ async def fetch_rss(source: Source, source_profile: Optional[dict] = None) -> li
                 )
 
             excerpt = _extraer_excerpt(content)
+            
+            # Verificar que al menos tengamos título
+            if not title:
+                logger.warning("Artículo sin título, saltando: %s", original_url)
+                continue
 
             articulo = {
                 "source_id": source.id,
@@ -244,10 +270,22 @@ async def fetch_rss(source: Source, source_profile: Optional[dict] = None) -> li
                 "created_at": datetime.utcnow(),
             }
             articulos_crudos.append(articulo)
+            
+            logger.info(
+                "✅ Artículo %d/%d extraído: %s",
+                idx + 1,
+                len(feed.entries),
+                title[:60]
+            )
+            
+            # Delay entre artículos para evitar ser bloqueado
+            if idx < len(feed.entries) - 1:  # No delay en el último artículo
+                logger.info("⏳ Esperando %d segundos antes del siguiente artículo...", ARTICLE_DELAY_SECONDS)
+                await asyncio.sleep(ARTICLE_DELAY_SECONDS)
 
         logger.info(
-            "Fuente %s: %d artículos encontrados",
-            source.name, len(articulos_crudos),
+            "✅ Fuente %s: %d artículos extraídos de %d entradas",
+            source.name, len(articulos_crudos), len(feed.entries),
         )
 
     except Exception as e:
