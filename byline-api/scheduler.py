@@ -34,8 +34,7 @@ async def scraping_job(force_date: Optional[datetime] = None):
         force_date: Si se proporciona, usa esta fecha para todos los artículos (solo para pruebas)
     """
     logger.info("Iniciando scraping_job...")
-    session_maker = get_session_maker()
-    async with session_maker() as db:
+    async with get_session_maker() as db:
         try:
             # Obtener fuentes activas
             result = await db.execute(
@@ -187,8 +186,7 @@ async def scraping_job(force_date: Optional[datetime] = None):
             
             # Guardar log de error en la base de datos
             try:
-                session_maker = get_session_maker()
-                async with session_maker() as db_log:
+                async with get_session_maker() as db_log:
                     log_entry = ActivityLog(
                         action="scraping_job",
                         result="error",
@@ -209,8 +207,7 @@ async def cleanup_job():
       - Publicados de más de 7 días
     """
     logger.info("Iniciando cleanup_job...")
-    session_maker = get_session_maker()
-    async with session_maker() as db:
+    async with get_session_maker() as db:
         try:
             ahora = datetime.utcnow()
 

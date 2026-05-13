@@ -937,13 +937,12 @@ async def trigger_manual_scrape(
         
         # Crear una nueva sesión para obtener estadísticas
         from database import get_session_maker
-        session_maker = get_session_maker()
         
         articles_today = 0
         active_sources = 0
         
         try:
-            async with session_maker() as new_db:
+            async with get_session_maker() as new_db:
                 # Contar artículos nuevos creados hoy
                 hoy = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
                 result = await new_db.execute(
@@ -975,8 +974,7 @@ async def trigger_manual_scrape(
         # Incluso en caso de error crítico, intentar devolver estadísticas
         try:
             from database import get_session_maker
-            session_maker = get_session_maker()
-            async with session_maker() as new_db:
+            async with get_session_maker() as new_db:
                 hoy = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
                 result = await new_db.execute(
                     select(Article).where(Article.created_at >= hoy)
