@@ -1,5 +1,6 @@
 # main.py - Punto de entrada de la API FastAPI para distribución de noticias
 
+import os
 import secrets
 import logging
 from contextlib import asynccontextmanager
@@ -45,12 +46,25 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Inicializa BD y scheduler al arrancar; limpia al detener."""
-    logger.info("Iniciando aplicación...")
-    await init_db()
-    start_scheduler()
-    yield
-    stop_scheduler()
-    logger.info("Aplicación detenida.")
+    try:
+        logger.info("Iniciando aplicación...")
+        logger.info(f"DATABASE_URL configurada: {'Sí' if os.getenv('DATABASE_URL') else 'NO — FALTA'}")
+        logger.info(f"ADMIN_SECRET configurado: {'Sí' if os.getenv('ADMIN_SECRET') else 'NO — FALTA'}")
+        await init_db()
+        logger.info("Base de datos inicializada correctamente")
+        start_scheduler()
+        logger.info("Scheduler iniciado correctamente")
+        yield
+    except Exception as e:
+        logger.error(f"ERROR CRÍTICO AL INICIAR: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise
+    finally:
+        from database import engine
+        stop_scheduler()
+        await engine.dispose()
+        logger.info("Aplicación cerrada correctamente")
 
 
 # ─── App ──────────────────────────────────────────────────────────────────────
