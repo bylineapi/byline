@@ -109,103 +109,87 @@ async def scraping_job(force_date: Optional[datetime] = None, source_ids: Option
             
             # Sesión 3: Guardar artículos encontrados
             # IMPORTANTE: Abrir sesión DESPUÉS del scraping para evitar timeout
-            try:
-                async with get_session_maker() as db:
-                    for idx, data in enumerate(articulos_crudos):
-                        try:
-                            logger.debug(
-                                "Procesando artículo: %s (source_id: %d)",
-                                data.get("title", "Sin título")[:80],
-                                data["source_id"]
+            # PROCESAR ARTÍCULOS DE UNO EN UNO con sesiones independientes
+            for idx, data in enumerate(articulos_crudos):
+                try:
+                    # Cada artículo usa su propia sesión de BD
+                    async with get_session_maker() as db:
+                        logger.debug(
+                            "Procesando artículo: %s (source_id: %d)",
+                            data.get("title", "Sin título")[:80],
+                            data["source_id"]
+                        )
+                        
+                        # Verificar si ya existe por original_url
+                        existe = await db.execute(
+                            select(Article).where(
+                                Article.original_url == data["original_url"]
                             )
-                            
-                            # Verificar si ya existe por original_url
-                            existe = await db.execute(
-                                select(Article).where(
-                                    Article.original_url == data["original_url"]
-                                )
-                            )
-                            if existe.scalar_one_or_none():
-                                logger.debug("Artículo duplicado, saltando: %s", data["original_url"][:80])
-                                continue
-
-                            # Puntuar
-                            score_final = scorer.score(data, articulos_recientes_dicts)
-                            data["impact_score"] = score_final
-                            logger.debug("Artículo puntuado con: %.2f", score_final)
-
-                            # Asignar estado según score
-                            if score_final >= 80:
-                                data["is_breaking"] = True
-                                data["status"] = ArticleStatusEnum.pending_breaking
-                            elif score_final >= 40:
-                                data["status"] = ArticleStatusEnum.pending_normal
-                            else:
-                                data["status"] = ArticleStatusEnum.discarded
-                                logger.debug("Artículo descartado (score bajo): %s", data.get("title", "")[:60])
-
-                            # Guardar solo no descartados
-                            if data["status"] != ArticleStatusEnum.discarded:
-                                article = Article(
-                                    source_id=data["source_id"],
-                                    title=data["title"],
-                                    content=data["content"],
-                                    excerpt=data.get("excerpt", ""),
-                                    image_url=data.get("image_url"),
-                                    original_url=data["original_url"],
-                                    category=data.get("category"),
-                                    impact_score=data["impact_score"],
-                                    is_breaking=data["is_breaking"],
-                                    status=data["status"],
-                                    published_at=data.get("published_at"),
-                                )
-                                db.add(article)
-                                total_nuevos += 1
-                                logger.info(
-                                    "✅ Artículo guardado: %s (score: %.2f, status: %s)",
-                                    data.get("title", "")[:60],
-                                    score_final,
-                                    data["status"]
-                                )
-
-                                # Agregar a lista de recientes para próximos scores
-                                articulos_recientes_dicts.append({
-                                    "source_id": data["source_id"],
-                                    "title": data["title"],
-                                    "content": data["content"],
-                                    "published_at": data.get("published_at"),
-                                })
-                            
-                            # Commit cada 5 artículos para evitar transacciones largas
-                            if (idx + 1) % 5 == 0:
-                                await db.commit()
-                                logger.debug("Checkpoint: commit parcial después de %d artículos", idx + 1)
-
-                        except Exception as e:
-                            logger.error(
-                                "Error procesando artículo de '%s': %s",
-                                fuente.name, e,
-                            )
-                            # Rollback inmediato si hay error en un artículo
-                            try:
-                                await db.rollback()
-                                logger.debug("Rollback ejecutado después de error")
-                            except Exception as rb_error:
-                                logger.error("Error haciendo rollback: %s", rb_error)
+                        )
+                        if existe.scalar_one_or_none():
+                            logger.debug("Artículo duplicado, saltando: %s", data["original_url"][:80])
                             continue
-                    
-                    # Commit final para artículos restantes
-                    await db.commit()
-                    logger.info(
-                        "Fuente %s: %d artículos nuevos guardados",
-                        fuente.name, total_nuevos
+
+                        # Puntuar
+                        score_final = scorer.score(data, articulos_recientes_dicts)
+                        data["impact_score"] = score_final
+                        logger.debug("Artículo puntuado con: %.2f", score_final)
+
+                        # Asignar estado según score
+                        if score_final >= 80:
+                            data["is_breaking"] = True
+                            data["status"] = ArticleStatusEnum.pending_breaking
+                        elif score_final >= 40:
+                            data["status"] = ArticleStatusEnum.pending_normal
+                        else:
+                            data["status"] = ArticleStatusEnum.discarded
+                            logger.debug("Artículo descartado (score bajo): %s", data.get("title", "")[:60])
+
+                        # Guardar solo no descartados
+                        if data["status"] != ArticleStatusEnum.discarded:
+                            article = Article(
+                                source_id=data["source_id"],
+                                title=data["title"],
+                                content=data["content"],
+                                excerpt=data.get("excerpt", ""),
+                                image_url=data.get("image_url"),
+                                original_url=data["original_url"],
+                                category=data.get("category"),
+                                impact_score=data["impact_score"],
+                                is_breaking=data["is_breaking"],
+                                status=data["status"],
+                                published_at=data.get("published_at"),
+                            )
+                            db.add(article)
+                            await db.commit()  # Commit inmediato por artículo
+                            total_nuevos += 1
+                            logger.info(
+                                "✅ Artículo guardado: %s (score: %.2f, status: %s)",
+                                data.get("title", "")[:60],
+                                score_final,
+                                data["status"]
+                            )
+
+                            # Agregar a lista de recientes para próximos scores
+                            articulos_recientes_dicts.append({
+                                "source_id": data["source_id"],
+                                "title": data["title"],
+                                "content": data["content"],
+                                "published_at": data.get("published_at"),
+                            })
+
+                except Exception as e:
+                    logger.error(
+                        "Error procesando artículo de '%s': %s",
+                        fuente.name, e,
                     )
-            except Exception as db_error:
-                logger.error(
-                    "Error de base de datos para fuente '%s': %s",
-                    fuente.name, db_error,
-                )
-                continue
+                    # Rollback automático por el context manager
+                    continue
+            
+            logger.info(
+                "Fuente %s: %d artículos nuevos guardados",
+                fuente.name, total_nuevos
+            )
         
         except Exception as e:
             logger.error(
