@@ -815,21 +815,26 @@ async def trigger_manual_scrape(
     try:
         logger.info("🔧 Scraping manual iniciado por admin")
         
-        # Ejecutar el job de scraping
+        # Ejecutar el job de scraping (crea su propia sesión)
         await scraping_job()
         
-        # Contar artículos nuevos creados hoy
-        hoy = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-        result = await db.execute(
-            select(Article).where(Article.created_at >= hoy)
-        )
-        articles_today = len(result.scalars().all())
+        # Crear una nueva consulta para obtener estadísticas
+        from database import get_session_maker
+        session_maker = get_session_maker()
         
-        # Contar fuentes activas procesadas
-        result_sources = await db.execute(
-            select(Source).where(Source.is_active.is_(True))
-        )
-        active_sources = len(result_sources.scalars().all())
+        async with session_maker() as new_db:
+            # Contar artículos nuevos creados hoy
+            hoy = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+            result = await new_db.execute(
+                select(Article).where(Article.created_at >= hoy)
+            )
+            articles_today = len(result.scalars().all())
+            
+            # Contar fuentes activas procesadas
+            result_sources = await new_db.execute(
+                select(Source).where(Source.is_active.is_(True))
+            )
+            active_sources = len(result_sources.scalars().all())
         
         return {
             "success": True,
@@ -841,6 +846,8 @@ async def trigger_manual_scrape(
         
     except Exception as e:
         logger.error(f"Error en scraping manual: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         raise HTTPException(
             status_code=500,
             detail=f"Error ejecutando scraping: {str(e)}"
