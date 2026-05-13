@@ -30,8 +30,10 @@ from auth import (
     get_current_client, verify_admin_secret,
     hash_api_key, SUSCRIPTION_PLANS,
 )
-from scheduler import start_scheduler, stop_scheduler
+from scheduler import start_scheduler, stop_scheduler, scraping_job
 from profiler import HTMLProfiler
+from category_detector import detectar_categoria_desde_feed, obtener_nombre_desde_feed
+from keep_alive import set_api_url, start_keep_alive, stop_keep_alive
 
 # Configurar logging
 logging.basicConfig(
@@ -46,14 +48,24 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Inicializa BD y scheduler al arrancar; limpia al detener."""
+    keep_alive_task = None
     try:
         logger.info("Iniciando aplicación...")
         logger.info(f"DATABASE_URL configurada: {'Sí' if os.getenv('DATABASE_URL') else 'NO — FALTA'}")
         logger.info(f"ADMIN_SECRET configurado: {'Sí' if os.getenv('ADMIN_SECRET') else 'NO — FALTA'}")
+        
         await init_db()
         logger.info("Base de datos inicializada correctamente")
+        
         start_scheduler()
         logger.info("Scheduler iniciado correctamente")
+        
+        # Configurar keep-alive para Render
+        api_url = os.getenv("RENDER_EXTERNAL_URL", "https://byline-dgpt.onrender.com")
+        set_api_url(api_url)
+        keep_alive_task = start_keep_alive()
+        logger.info(f"Keep-alive configurado: {api_url}")
+        
         yield
     except Exception as e:
         logger.error(f"ERROR CRÍTICO AL INICIAR: {type(e).__name__}: {e}")
@@ -63,6 +75,7 @@ async def lifespan(app: FastAPI):
     finally:
         from database import engine
         stop_scheduler()
+        stop_keep_alive(keep_alive_task)
         await engine.dispose()
         logger.info("Aplicación cerrada correctamente")
 
@@ -95,7 +108,8 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         return {
             "status": "ok",
             "database": "connected",
-            "version": "1.0.0"
+            "version": "1.0.0",
+            "timestamp": datetime.utcnow().isoformat()
         }
     except Exception as e:
         return JSONResponse(
@@ -106,6 +120,20 @@ async def health_check(db: AsyncSession = Depends(get_db)):
                 "detail": str(e)
             }
         )
+
+
+@app.get("/ping")
+async def ping():
+    """
+    Endpoint público para keep-alive de Render.
+    Render free tier se duerme después de 15 min de inactividad.
+    Este endpoint permite hacer ping cada 12 min para mantenerlo activo.
+    """
+    return {
+        "status": "ok",
+        "message": "pong",
+        "timestamp": datetime.utcnow().isoformat()
+    }
 
 
 # ─── Admin: Clientes ─────────────────────────────────────────────────────────
@@ -260,6 +288,122 @@ async def create_source(
     return SourceOut.model_validate(source)
 
 
+@app.post("/admin/sources/bulk", response_model=dict)
+async def create_sources_bulk(
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(verify_admin_secret),
+):
+    """
+    Agrega múltiples fuentes RSS en lote.
+    Detecta automáticamente nombre y categoría de cada fuente.
+    
+    Body esperado:
+    {
+        "rss_urls": [
+            "https://feeds.elpais.com/rss/tecnologia.xml",
+            "https://feeds.elpais.com/rss/deportes.xml"
+        ]
+    }
+    
+    Retorna:
+    {
+        "success": true,
+        "total": 10,
+        "created": 8,
+        "failed": 2,
+        "sources": [...],
+        "errors": [...]
+    }
+    """
+    rss_urls = data.get("rss_urls", [])
+    
+    if not rss_urls or not isinstance(rss_urls, list):
+        raise HTTPException(
+            status_code=400,
+            detail="Se requiere una lista de URLs RSS en 'rss_urls'"
+        )
+    
+    results = {
+        "success": True,
+        "total": len(rss_urls),
+        "created": 0,
+        "failed": 0,
+        "sources": [],
+        "errors": []
+    }
+    
+    for rss_url in rss_urls:
+        rss_url = rss_url.strip()
+        if not rss_url:
+            continue
+        
+        try:
+            # Verificar si ya existe
+            result = await db.execute(
+                select(Source).where(Source.rss_url == rss_url)
+            )
+            existente = result.scalar_one_or_none()
+            
+            if existente:
+                results["failed"] += 1
+                results["errors"].append({
+                    "url": rss_url,
+                    "error": "La fuente ya existe"
+                })
+                continue
+            
+            # Detectar categoría automáticamente
+            category = detectar_categoria_desde_feed(rss_url)
+            
+            # Obtener nombre automáticamente
+            name = obtener_nombre_desde_feed(rss_url)
+            
+            if not name:
+                # Fallback: usar el dominio como nombre
+                from urllib.parse import urlparse
+                domain = urlparse(rss_url).netloc.replace("www.", "")
+                name = domain.split(".")[0].title()
+            
+            # Crear la fuente
+            source = Source(
+                name=name,
+                rss_url=rss_url,
+                category=category,
+            )
+            db.add(source)
+            await db.flush()
+            await db.refresh(source)
+            
+            results["created"] += 1
+            results["sources"].append({
+                "id": source.id,
+                "name": source.name,
+                "rss_url": source.rss_url,
+                "category": source.category
+            })
+            
+            logger.info(
+                "Fuente creada automáticamente: %s (categoría: %s)",
+                name, category or "sin categorizar"
+            )
+            
+        except Exception as e:
+            results["failed"] += 1
+            results["errors"].append({
+                "url": rss_url,
+                "error": str(e)
+            })
+            logger.error("Error creando fuente %s: %s", rss_url, e)
+    
+    await db.commit()
+    
+    if results["failed"] > 0 and results["created"] == 0:
+        results["success"] = False
+    
+    return results
+
+
 @app.get("/admin/sources", response_model=list[SourceOut])
 async def list_sources(
     db: AsyncSession = Depends(get_db),
@@ -292,6 +436,51 @@ async def delete_source(
     await db.commit()
     
     return {"success": True, "message": "Fuente desactivada"}
+
+
+@app.patch("/admin/sources/{source_id}")
+async def update_source(
+    source_id: int,
+    data: dict,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(verify_admin_secret),
+):
+    """
+    Actualiza una fuente existente.
+    Permite reactivar fuentes desactivadas.
+    """
+    result = await db.execute(select(Source).where(Source.id == source_id))
+    source = result.scalar_one_or_none()
+    
+    if not source:
+        raise HTTPException(status_code=404, detail="Fuente no encontrada")
+    
+    # Actualizar campos permitidos
+    if "is_active" in data:
+        source.is_active = data["is_active"]
+    
+    if "name" in data:
+        source.name = data["name"]
+    
+    if "category" in data:
+        source.category = data["category"]
+    
+    if "rss_url" in data:
+        source.rss_url = data["rss_url"]
+    
+    await db.commit()
+    await db.refresh(source)
+    
+    return {
+        "success": True,
+        "source": {
+            "id": source.id,
+            "name": source.name,
+            "rss_url": source.rss_url,
+            "category": source.category,
+            "is_active": source.is_active
+        }
+    }
 
 
 # ─── News ─────────────────────────────────────────────────────────────────────
@@ -612,6 +801,50 @@ async def get_stats(
         active_clients=active_clients,
         articles_discarded_today=articles_discarded_today,
     )
+
+
+@app.post("/admin/scrape", response_model=dict)
+async def trigger_manual_scrape(
+    db: AsyncSession = Depends(get_db),
+    _=Depends(verify_admin_secret),
+):
+    """
+    Ejecuta el scraping de forma manual.
+    Útil para probar nuevas fuentes o forzar la extracción de artículos.
+    """
+    try:
+        logger.info("🔧 Scraping manual iniciado por admin")
+        
+        # Ejecutar el job de scraping
+        await scraping_job()
+        
+        # Contar artículos nuevos creados hoy
+        hoy = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        result = await db.execute(
+            select(Article).where(Article.created_at >= hoy)
+        )
+        articles_today = len(result.scalars().all())
+        
+        # Contar fuentes activas procesadas
+        result_sources = await db.execute(
+            select(Source).where(Source.is_active.is_(True))
+        )
+        active_sources = len(result_sources.scalars().all())
+        
+        return {
+            "success": True,
+            "message": "Scraping completado exitosamente",
+            "articles_today": articles_today,
+            "sources_processed": active_sources,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error en scraping manual: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error ejecutando scraping: {str(e)}"
+        )
 
 
 # ─── Admin: Logs ─────────────────────────────────────────────────────────────

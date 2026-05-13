@@ -230,6 +230,11 @@
             outline: none;
             border-color: #2d5a87;
         }
+        .form-group textarea {
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+        }
 
         /* ============================================
            SELECTS EN LÍNEA (PARA EDICIÓN)
@@ -500,6 +505,23 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Scraping Manual -->
+            <div class="card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                <h2 style="color: white; border-bottom-color: rgba(255,255,255,0.3);">
+                    <span>⚡ Scraping Manual</span>
+                </h2>
+                <p style="margin-bottom: 16px; opacity: 0.9;">
+                    El scraping se ejecuta automáticamente cada 15 minutos. También puedes ejecutarlo manualmente si necesitas extraer artículos de inmediato.
+                </p>
+                <div style="display: flex; gap: 12px; align-items: center;">
+                    <button class="btn" id="btn-manual-scrape" style="background: white; color: #667eea; font-weight: 600; padding: 12px 24px; font-size: 15px;">
+                        🚀 Ejecutar Scraping Ahora
+                    </button>
+                    <span id="scrape-status" style="font-size: 13px; opacity: 0.9;"></span>
+                </div>
+                <div id="scrape-result" style="margin-top: 16px; display: none;"></div>
+            </div>
         </div>
 
         <!-- ============================================
@@ -557,6 +579,30 @@
 
                 <!-- RSS -->
                 <div id="source-rss">
+                    <!-- Agregar múltiples fuentes -->
+                    <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 6px; padding: 16px; margin-bottom: 20px;">
+                        <h3 style="font-size: 16px; margin-bottom: 12px; color: #0369a1;">🚀 Agregar múltiples fuentes (Recomendado)</h3>
+                        <p style="font-size: 13px; color: #475569; margin-bottom: 12px;">
+                            Pega todas las URLs RSS que quieras agregar. El sistema detectará automáticamente el nombre y categoría de cada fuente.
+                        </p>
+                        <div class="form-group">
+                            <label>URLs RSS (una por línea)</label>
+                            <textarea id="bulk_rss_urls" rows="8" placeholder="https://feeds.elpais.com/rss/tecnologia.xml
+https://feeds.elpais.com/rss/deportes.xml
+https://rss.bbc.com/news/world/latam/rss.xml
+..."></textarea>
+                        </div>
+                        <button class="btn btn-primary" id="btn-add-bulk-rss" style="background: #0369a1;">
+                            ✨ Agregar todas las fuentes con categoría automática
+                        </button>
+                        <div id="bulk-rss-result" style="margin-top: 12px;"></div>
+                    </div>
+
+                    <div style="text-align: center; margin: 20px 0; color: #94a3b8;">
+                        <span>─── o agrega una fuente individual ───</span>
+                    </div>
+
+                    <!-- Agregar fuente individual -->
                     <div class="form-group">
                         <label>Nombre de la fuente</label>
                         <input type="text" id="rss_name" placeholder="ej: El País">
@@ -569,7 +615,7 @@
                         <label>Categoría (opcional)</label>
                         <input type="text" id="rss_category" placeholder="ej: tecnologia">
                     </div>
-                    <button class="btn btn-primary" id="btn-add-rss">Agregar fuente RSS</button>
+                    <button class="btn btn-secondary" id="btn-add-rss">Agregar fuente individual</button>
                     <div id="rss-result"></div>
                 </div>
 
@@ -696,7 +742,7 @@
         // ============================================
         // CONFIGURACIÓN
         // ============================================
-        const API_BASE = window.location.origin;
+        const API_BASE = 'https://byline-dgpt.onrender.com';
         let currentSecret = '';
 
         // ============================================
@@ -781,17 +827,31 @@
                 
                 // Activar el seleccionado
                 this.classList.add('active');
-                document.getElementById('panel-' + this.dataset.panel).classList.add('active');
+                const panelName = this.dataset.panel;
+                document.getElementById('panel-' + panelName).classList.add('active');
                 
                 // Cargar datos según el panel
-                const panel = this.dataset.panel;
-                if (panel === 'dashboard') loadDashboard();
-                else if (panel === 'clients') loadClients();
-                else if (panel === 'sources') loadSources();
-                else if (panel === 'articles') loadArticles();
-                else if (panel === 'logs') loadLogs();
+                if (panelName === 'dashboard') {
+                    loadDashboard();
+                } else if (panelName === 'clients') {
+                    loadClients();
+                } else if (panelName === 'sources') {
+                    loadSources();
+                } else if (panelName === 'articles') {
+                    loadArticles();
+                } else if (panelName === 'logs') {
+                    loadLogs();
+                }
             });
         });
+        
+        // Auto-refresh dashboard cada 2 minutos
+        setInterval(() => {
+            const dashboardPanel = document.getElementById('panel-dashboard');
+            if (dashboardPanel && dashboardPanel.classList.contains('active')) {
+                loadDashboard();
+            }
+        }, 120000); // 2 minutos
 
         // ============================================
         // DASHBOARD
@@ -814,6 +874,9 @@
                 console.error('Error cargando stats:', e);
             }
         }
+        
+        // Alias para compatibilidad
+        const loadStats = loadDashboard;
 
         // ============================================
         // CLIENTES
@@ -903,6 +966,86 @@
             document.getElementById('api-key-modal').classList.remove('active');
         }
 
+        // Scraping Manual
+        document.getElementById('btn-manual-scrape').addEventListener('click', async function() {
+            const btn = this;
+            const statusEl = document.getElementById('scrape-status');
+            const resultEl = document.getElementById('scrape-result');
+            
+            // Deshabilitar botón y mostrar loading
+            btn.disabled = true;
+            btn.textContent = '⏳ Procesando...';
+            statusEl.textContent = 'Extrayendo artículos de todas las fuentes...';
+            resultEl.style.display = 'none';
+            
+            const startTime = Date.now();
+            
+            try {
+                const res = await fetch(API_BASE + '/admin/scrape', {
+                    method: 'POST',
+                    headers: headers()
+                });
+                
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                
+                if (!res.ok) {
+                    const error = await res.json();
+                    throw new Error(error.detail || 'Error al ejecutar scraping');
+                }
+                
+                const data = await res.json();
+                
+                // Mostrar resultado exitoso
+                resultEl.style.display = 'block';
+                resultEl.innerHTML = `
+                    <div style="background: rgba(255,255,255,0.95); color: #333; padding: 16px; border-radius: 8px;">
+                        <div style="font-size: 18px; font-weight: 600; margin-bottom: 12px; color: #667eea;">
+                            ✅ Scraping Completado
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px;">
+                            <div style="background: #f8fafc; padding: 12px; border-radius: 6px; text-align: center;">
+                                <div style="font-size: 24px; font-weight: 700; color: #667eea;">${data.sources_processed}</div>
+                                <div style="font-size: 12px; color: #64748b;">Fuentes procesadas</div>
+                            </div>
+                            <div style="background: #f8fafc; padding: 12px; border-radius: 6px; text-align: center;">
+                                <div style="font-size: 24px; font-weight: 700; color: #10b981;">${data.articles_today}</div>
+                                <div style="font-size: 12px; color: #64748b;">Artículos hoy</div>
+                            </div>
+                            <div style="background: #f8fafc; padding: 12px; border-radius: 6px; text-align: center;">
+                                <div style="font-size: 24px; font-weight: 700; color: #f59e0b;">${elapsed}s</div>
+                                <div style="font-size: 12px; color: #64748b;">Tiempo</div>
+                            </div>
+                        </div>
+                        <div style="font-size: 12px; color: #94a3b8; margin-top: 8px;">
+                            🕐 Completado: ${new Date(data.timestamp).toLocaleString('es-ES')}
+                        </div>
+                    </div>
+                `;
+                
+                statusEl.textContent = 'Última ejecución: hace ' + elapsed + 's';
+                
+                // Recargar estadísticas
+                loadStats();
+                
+            } catch (e) {
+                resultEl.style.display = 'block';
+                resultEl.innerHTML = `
+                    <div style="background: rgba(255,255,255,0.95); color: #333; padding: 16px; border-radius: 8px; border: 2px solid #ef4444;">
+                        <div style="font-size: 16px; font-weight: 600; color: #ef4444; margin-bottom: 8px;">
+                            ❌ Error en Scraping
+                        </div>
+                        <div style="font-size: 14px; color: #64748b;">
+                            ${e.message}
+                        </div>
+                    </div>
+                `;
+                statusEl.textContent = 'Error en la ejecución';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🚀 Ejecutar Scraping Ahora';
+            }
+        });
+
         // Cambiar plan de cliente
         async function changeClientPlan(clientId, newPlan) {
             try {
@@ -942,6 +1085,102 @@
             document.getElementById('source-rss').style.display = tab === 'rss' ? 'block' : 'none';
             document.getElementById('source-html').style.display = tab === 'html' ? 'block' : 'none';
         }
+
+        // Agregar múltiples fuentes RSS
+        document.getElementById('btn-add-bulk-rss').addEventListener('click', async function() {
+            const bulkTextarea = document.getElementById('bulk_rss_urls');
+            const bulkResult = document.getElementById('bulk-rss-result');
+            const btn = document.getElementById('btn-add-bulk-rss');
+            
+            const rawUrls = bulkTextarea.value.trim();
+            if (!rawUrls) {
+                bulkResult.innerHTML = '<div class="alert alert-error">Pega al menos una URL RSS</div>';
+                return;
+            }
+            
+            // Parsear URLs (una por línea)
+            const rssUrls = rawUrls.split('\n')
+                .map(url => url.trim())
+                .filter(url => url.length > 0);
+            
+            if (rssUrls.length === 0) {
+                bulkResult.innerHTML = '<div class="alert alert-error">No se encontraron URLs válidas</div>';
+                return;
+            }
+            
+            btn.disabled = true;
+            btn.textContent = '⏳ Procesando...';
+            bulkResult.innerHTML = '<div class="loading visible">Detectando categorías y agregando ' + rssUrls.length + ' fuentes...</div>';
+            
+            try {
+                const res = await fetch(API_BASE + '/admin/sources/bulk', {
+                    method: 'POST',
+                    headers: headers(),
+                    body: JSON.stringify({ rss_urls: rssUrls })
+                });
+                
+                if (!res.ok) {
+                    const error = await res.json();
+                    throw new Error(error.detail || 'Error al procesar');
+                }
+                
+                const data = await res.json();
+                
+                // Construir mensaje de resultado
+                let html = '<div class="alert alert-success">';
+                html += '<strong>¡Proceso completado!</strong><br>';
+                html += '✅ Creadas: ' + data.created + '<br>';
+                if (data.failed > 0) {
+                    html += '❌ Fallidas: ' + data.failed + '<br>';
+                }
+                html += '</div>';
+                
+                // Mostrar fuentes creadas
+                if (data.sources && data.sources.length > 0) {
+                    html += '<div style="margin-top: 12px; background: #f8fafc; padding: 12px; border-radius: 6px;">';
+                    html += '<strong>Fuentes creadas:</strong>';
+                    html += '<ul style="margin: 8px 0; padding-left: 20px;">';
+                    data.sources.forEach(source => {
+                        const categoryBadge = source.category 
+                            ? '<span class="badge badge-pro">' + source.category + '</span>'
+                            : '<span class="badge">sin categoría</span>';
+                        html += '<li style="margin: 4px 0; font-size: 13px;">';
+                        html += '<strong>' + source.name + '</strong> ' + categoryBadge;
+                        html += '</li>';
+                    });
+                    html += '</ul></div>';
+                }
+                
+                // Mostrar errores si los hay
+                if (data.errors && data.errors.length > 0) {
+                    html += '<div style="margin-top: 12px; background: #fef2f2; padding: 12px; border-radius: 6px; border: 1px solid #fecaca;">';
+                    html += '<strong>Errores:</strong>';
+                    html += '<ul style="margin: 8px 0; padding-left: 20px;">';
+                    data.errors.forEach(err => {
+                        html += '<li style="margin: 4px 0; font-size: 13px; color: #991b1b;">';
+                        html += err.url + ' - ' + err.error;
+                        html += '</li>';
+                    });
+                    html += '</ul></div>';
+                }
+                
+                bulkResult.innerHTML = html;
+                
+                // Limpiar textarea si todo fue exitoso
+                if (data.failed === 0) {
+                    bulkTextarea.value = '';
+                }
+                
+                // Recargar lista de fuentes
+                loadSources();
+                
+            } catch (e) {
+                bulkResult.innerHTML = '<div class="alert alert-error">Error: ' + e.message + '</div>';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '✨ Agregar todas las fuentes con categoría automática';
+            }
+        });
 
         // Agregar fuente RSS
         document.getElementById('btn-add-rss').addEventListener('click', async function() {
@@ -1020,15 +1259,23 @@
                 list.innerHTML = `
                     <table class="data-table">
                         <thead>
-                            <tr><th>Nombre</th><th>URL</th><th>Categoría</th><th>Acciones</th></tr>
+                            <tr><th>Nombre</th><th>URL</th><th>Categoría</th><th>Estado</th><th>Acciones</th></tr>
                         </thead>
                         <tbody>
                             ${sources.map(s => `
-                                <tr>
+                                <tr style="${!s.is_active ? 'opacity: 0.5; background: #f8fafc;' : ''}">
                                     <td>${s.name}</td>
                                     <td><a href="${s.url || s.rss_url}" target="_blank">${s.url || s.rss_url}</a></td>
                                     <td>${s.category || '—'}</td>
-                                    <td><button class="btn btn-danger btn-sm" onclick="deleteSource(${s.id})">Eliminar</button></td>
+                                    <td>${s.is_active 
+                                        ? '<span class="badge badge-active">Activa</span>' 
+                                        : '<span class="badge badge-inactive">Desactivada</span>'}
+                                    </td>
+                                    <td>
+                                        ${s.is_active 
+                                            ? '<button class="btn btn-danger btn-sm" onclick="deleteSource(' + s.id + ')">Desactivar</button>'
+                                            : '<button class="btn btn-secondary btn-sm" onclick="activateSource(' + s.id + ')">Reactivar</button>'}
+                                    </td>
                                 </tr>
                             `).join('')}
                         </tbody>
@@ -1047,10 +1294,46 @@
                     method: 'DELETE',
                     headers: headers()
                 });
-                if (!res.ok) throw new Error();
+                
+                if (!res.ok) {
+                    const error = await res.json();
+                    throw new Error(error.detail || 'Error al eliminar');
+                }
+                
+                // Recargar la lista de fuentes
                 loadSources();
+                
+                // Mostrar mensaje de éxito
+                alert('Fuente desactivada correctamente');
             } catch (e) {
-                alert('Error al eliminar fuente');
+                console.error('Error eliminando fuente:', e);
+                alert('Error al eliminar fuente: ' + e.message);
+            }
+        }
+
+        // Reactivar fuente
+        async function activateSource(sourceId) {
+            if (!confirm('¿Reactivar esta fuente?')) return;
+            try {
+                const res = await fetch(API_BASE + '/admin/sources/' + sourceId, {
+                    method: 'PATCH',
+                    headers: headers(),
+                    body: JSON.stringify({ is_active: true })
+                });
+                
+                if (!res.ok) {
+                    const error = await res.json();
+                    throw new Error(error.detail || 'Error al reactivar');
+                }
+                
+                // Recargar la lista de fuentes
+                loadSources();
+                
+                // Mostrar mensaje de éxito
+                alert('Fuente reactivada correctamente');
+            } catch (e) {
+                console.error('Error reactivando fuente:', e);
+                alert('Error al reactivar fuente: ' + e.message);
             }
         }
 
