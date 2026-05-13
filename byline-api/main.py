@@ -11,7 +11,7 @@ from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc, text
+from sqlalchemy import select, desc, text, delete
 from sqlalchemy.orm import joinedload
 
 from database import get_db, init_db
@@ -487,8 +487,8 @@ async def delete_source(
     _=Depends(verify_admin_secret),
 ):
     """
-    Desactiva una fuente (soft delete).
-    No elimina el registro, solo pone is_active = False.
+    Elimina una fuente completamente de la base de datos.
+    También elimina todos los artículos asociados a esta fuente.
     """
     result = await db.execute(select(Source).where(Source.id == source_id))
     source = result.scalar_one_or_none()
@@ -496,11 +496,17 @@ async def delete_source(
     if not source:
         raise HTTPException(status_code=404, detail="Fuente no encontrada")
     
-    # Soft delete: desactivar la fuente
-    source.is_active = False
+    # Eliminar artículos asociados
+    await db.execute(delete(Article).where(Article.source_id == source_id))
+    
+    # Eliminar perfil de scraping si existe
+    await db.execute(delete(SourceProfile).where(SourceProfile.source_id == source_id))
+    
+    # Eliminar la fuente
+    await db.delete(source)
     await db.commit()
     
-    return {"success": True, "message": "Fuente desactivada"}
+    return {"success": True, "message": "Fuente eliminada completamente"}
 
 
 @app.patch("/admin/sources/{source_id}")

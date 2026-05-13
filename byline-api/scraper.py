@@ -39,6 +39,7 @@ def _extraer_con_newspaper(url: str) -> dict:
         "published_at": None,
     }
     try:
+        logger.debug("newspaper3k descargando: %s", url)
         article = NewspaperArticle(url, language="es")
         article.download()
         article.parse()
@@ -47,6 +48,13 @@ def _extraer_con_newspaper(url: str) -> dict:
         resultado["image_url"] = article.top_image
         if article.publish_date:
             resultado["published_at"] = article.publish_date
+        
+        logger.debug(
+            "newspaper3k extrajo - Título: '%s', Contenido: %d chars, Imagen: %s",
+            article.title[:50] if article.title else 'None',
+            len(article.text) if article.text else 0,
+            article.top_image or 'None'
+        )
     except Exception as e:
         logger.warning("newspaper3k falló para %s: %s", url, e)
     return resultado

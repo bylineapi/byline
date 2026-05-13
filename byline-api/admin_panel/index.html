@@ -1309,7 +1309,7 @@ https://rss.bbc.com/news/world/latam/rss.xml
                                     </td>
                                     <td>
                                         ${s.is_active 
-                                            ? '<button class="btn btn-danger btn-sm" onclick="deleteSource(' + s.id + ')">Desactivar</button>'
+                                            ? '<button class="btn btn-danger btn-sm" onclick="deleteSource(' + s.id + ', \'' + s.name + '\')">🗑️ Eliminar</button>'
                                             : '<button class="btn btn-secondary btn-sm" onclick="activateSource(' + s.id + ')">Reactivar</button>'}
                                     </td>
                                 </tr>
@@ -1323,9 +1323,18 @@ https://rss.bbc.com/news/world/latam/rss.xml
             }
         }
 
-        // Eliminar fuente
-        async function deleteSource(sourceId) {
-            if (!confirm('¿Desactivar esta fuente?')) return;
+        // Eliminar fuente completamente
+        async function deleteSource(sourceId, sourceName) {
+            const confirmMsg = `⚠️ ¿Eliminar completamente la fuente "${sourceName}"?
+
+Esto eliminará:
+- La fuente de la lista
+- Todos los artículos asociados
+- El perfil de scraping
+
+Esta acción no se puede deshacer.`;
+            
+            if (!confirm(confirmMsg)) return;
             try {
                 const res = await fetch(API_BASE + '/admin/sources/' + sourceId, {
                     method: 'DELETE',
@@ -1341,7 +1350,7 @@ https://rss.bbc.com/news/world/latam/rss.xml
                 loadSources();
                 
                 // Mostrar mensaje de éxito
-                alert('Fuente desactivada correctamente');
+                alert('✅ Fuente eliminada completamente');
             } catch (e) {
                 console.error('Error eliminando fuente:', e);
                 alert('Error al eliminar fuente: ' + e.message);
