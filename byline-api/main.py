@@ -142,7 +142,6 @@ async def list_clients(
             created_at=c.created_at,
         )
 for c in clients
-        ]
     ]
 
 
