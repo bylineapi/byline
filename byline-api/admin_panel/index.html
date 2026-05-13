@@ -1168,20 +1168,24 @@ https://rss.bbc.com/news/world/latam/rss.xml
                 // Recargar estadísticas
                 loadStats();
                 
-                // Mostrar botón para ver artículos
-                resultEl.innerHTML += `
+                // Mostrar botón para ver artículos (agregar al HTML existente)
+                const buttonHtml = `
                     <div style="margin-top: 12px; text-align: center;">
                         <button onclick="switchToArticles()" style="background: #10b981; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px;">
                             📰 Ver Artículos Extraídos
                         </button>
                     </div>
                 `;
+                resultEl.innerHTML += buttonHtml;
                 
                 // Auto-cargar artículos después de 2 segundos
                 setTimeout(() => {
                     const articlesPanel = document.getElementById('panel-articles');
                     if (articlesPanel && articlesPanel.classList.contains('active')) {
                         loadArticles();
+                    } else {
+                        // Si no estamos en el panel de artículos, cambiar a él y cargar
+                        switchToArticles();
                     }
                 }, 2000);
                 
@@ -1572,10 +1576,14 @@ Esta acción no se puede deshacer.`;
         
         // Cambiar al panel de artículos
         function switchToArticles() {
-            // Hacer clic en el botón de artículos en el sidebar
-            const articlesBtn = document.getElementById('nav-articles');
+            // Buscar el botón de artículos por data-panel
+            const articlesBtn = document.querySelector('.nav-tab[data-panel="articles"]');
             if (articlesBtn) {
                 articlesBtn.click();
+                // Cargar artículos después de cambiar al panel
+                setTimeout(() => loadArticles(), 100);
+            } else {
+                console.error('No se encontró el botón de artículos');
             }
         }
         
