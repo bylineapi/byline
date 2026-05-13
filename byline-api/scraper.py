@@ -146,7 +146,7 @@ def _parsear_fecha_rss(entry) -> Optional[datetime]:
     return None
 
 
-async def fetch_rss(source: Source, source_profile: Optional[dict] = None) -> list[dict]:
+async def fetch_rss(source: Source, source_profile: Optional[dict] = None, force_date: Optional[datetime] = None) -> list[dict]:
     """
     Lee el RSS de una fuente, extrae artículos nuevos y retorna una lista
     de diccionarios con los datos crudos listos para puntuar.
@@ -160,6 +160,9 @@ async def fetch_rss(source: Source, source_profile: Optional[dict] = None) -> li
     usa el Source Profiler en vez de newspaper3k para extraer contenido.
     
     IMPORTANTE: Agrega delay entre artículos para evitar bloqueos del servidor fuente.
+    
+    Args:
+        force_date: Si se proporciona, usa esta fecha para todos los artículos (solo para pruebas)
     """
     logger.info("📰 Scraping fuente: %s (%s)", source.name, source.rss_url)
     articulos_crudos = []
@@ -266,8 +269,8 @@ async def fetch_rss(source: Source, source_profile: Optional[dict] = None) -> li
                 "impact_score": 0.0,
                 "is_breaking": False,
                 "status": "pending",
-                "published_at": published_at or datetime.utcnow(),
-                "created_at": datetime.utcnow(),
+                "published_at": force_date or published_at or datetime.utcnow(),
+                "created_at": force_date or datetime.utcnow(),
             }
             articulos_crudos.append(articulo)
             

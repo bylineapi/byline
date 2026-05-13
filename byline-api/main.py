@@ -415,6 +415,71 @@ async def list_sources(
     return [SourceOut.model_validate(s) for s in sources]
 
 
+@app.post("/admin/sources/check-health", response_model=dict)
+async def check_sources_health(
+    db: AsyncSession = Depends(get_db),
+    _=Depends(verify_admin_secret),
+):
+    """
+    Verifica el estado de todas las fuentes RSS.
+    Retorna cuáles están funcionando y cuáles están caídas.
+    """
+    import feedparser
+    import asyncio
+    
+    result = await db.execute(select(Source).where(Source.is_active.is_(True)))
+    sources = result.scalars().all()
+    
+    health_status = {
+        "total": len(sources),
+        "healthy": 0,
+        "unhealthy": 0,
+        "sources": []
+    }
+    
+    async def check_source(source: Source):
+        """Verifica una fuente individual."""
+        try:
+            loop = asyncio.get_event_loop()
+            feed = await loop.run_in_executor(
+                None,
+                lambda: feedparser.parse(source.rss_url)
+            )
+            
+            is_healthy = not feed.bozo or (feed.bozo and len(feed.entries) > 0)
+            
+            return {
+                "id": source.id,
+                "name": source.name,
+                "rss_url": source.rss_url,
+                "healthy": is_healthy,
+                "entries_found": len(feed.entries),
+                "error": str(feed.bozo_exception) if feed.bozo else None
+            }
+        except Exception as e:
+            return {
+                "id": source.id,
+                "name": source.name,
+                "rss_url": source.rss_url,
+                "healthy": False,
+                "entries_found": 0,
+                "error": str(e)
+            }
+    
+    # Verificar todas las fuentes en paralelo
+    tasks = [check_source(source) for source in sources]
+    results = await asyncio.gather(*tasks)
+    
+    for result in results:
+        health_status["sources"].append(result)
+        if result["healthy"]:
+            health_status["healthy"] += 1
+        else:
+            health_status["unhealthy"] += 1
+    
+    return health_status
+
+
 @app.delete("/admin/sources/{source_id}")
 async def delete_source(
     source_id: int,
@@ -805,19 +870,32 @@ async def get_stats(
 
 @app.post("/admin/scrape", response_model=dict)
 async def trigger_manual_scrape(
+    test_date: Optional[str] = Query(None, description="Fecha para pruebas (YYYY-MM-DD)"),
     db: AsyncSession = Depends(get_db),
     _=Depends(verify_admin_secret),
 ):
     """
     Ejecuta el scraping de forma manual.
     Útil para probar nuevas fuentes o forzar la extracción de artículos.
+    
+    Args:
+        test_date: Fecha opcional en formato YYYY-MM-DD para pruebas
     """
     try:
         logger.info("🔧 Scraping manual iniciado por admin")
         
+        # Parsear fecha de prueba si se proporciona
+        force_date = None
+        if test_date:
+            try:
+                force_date = datetime.strptime(test_date, "%Y-%m-%d").replace(hour=12, minute=0, second=0)
+                logger.info(f"📅 Usando fecha de prueba: {force_date}")
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Formato de fecha inválido. Use YYYY-MM-DD")
+        
         # Ejecutar el job de scraping (maneja su propia sesión internamente)
         try:
-            await scraping_job()
+            await scraping_job(force_date)
             logger.info("✅ scraping_job completado")
         except Exception as scrape_error:
             logger.error(f"Error en scraping_job: {scrape_error}")

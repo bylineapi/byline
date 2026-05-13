@@ -514,6 +514,15 @@
                 <p style="margin-bottom: 16px; opacity: 0.9;">
                     El scraping se ejecuta automáticamente cada 15 minutos. También puedes ejecutarlo manualmente si necesitas extraer artículos de inmediato.
                 </p>
+                
+                <div style="background: rgba(255,255,255,0.15); padding: 12px; border-radius: 6px; margin-bottom: 16px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 600; font-size: 14px;">📅 Fecha para pruebas (opcional):</label>
+                    <input type="date" id="test-date" style="padding: 8px; border: none; border-radius: 4px; font-size: 14px; width: 100%; max-width: 250px;">
+                    <p style="margin: 8px 0 0; font-size: 12px; opacity: 0.8;">
+                        ⚠️ Solo para pruebas: Usa una fecha pasada para extraer artículos sin esperar noticias nuevas.
+                    </p>
+                </div>
+                
                 <div style="display: flex; gap: 12px; align-items: center;">
                     <button class="btn" id="btn-manual-scrape" style="background: white; color: #667eea; font-weight: 600; padding: 12px 24px; font-size: 15px;">
                         🚀 Ejecutar Scraping Ahora
@@ -571,7 +580,12 @@
              ============================================ -->
         <div id="panel-sources" class="panel">
             <div class="card">
-                <h2>Agregar Fuente</h2>
+                <h2>
+                    Agregar Fuente
+                    <button class="btn btn-secondary" onclick="checkSourcesHealth()" style="font-size: 13px; padding: 6px 12px;">
+                        🔍 Verificar Estado de Fuentes
+                    </button>
+                </h2>
                 <div style="display: flex; gap: 8px; margin-bottom: 16px;">
                     <button class="btn btn-primary active" onclick="showSourceTab('rss')">Con RSS</button>
                     <button class="btn btn-secondary" onclick="showSourceTab('html')">Con HTML</button>
@@ -981,7 +995,17 @@ https://rss.bbc.com/news/world/latam/rss.xml
             const startTime = Date.now();
             
             try {
-                const res = await fetch(API_BASE + '/admin/scrape', {
+                // Obtener fecha de prueba si se seleccionó
+                const testDateInput = document.getElementById('test-date');
+                let url = API_BASE + '/admin/scrape';
+                if (testDateInput && testDateInput.value) {
+                    url += `?test_date=${testDateInput.value}`;
+                    statusEl.textContent = `Extrayendo artículos con fecha de prueba: ${testDateInput.value}...`;
+                } else {
+                    statusEl.textContent = 'Extrayendo artículos de todas las fuentes...';
+                }
+                
+                const res = await fetch(url, {
                     method: 'POST',
                     headers: headers()
                 });
@@ -1256,15 +1280,27 @@ https://rss.bbc.com/news/world/latam/rss.xml
                     return;
                 }
                 
+                // Verificar estado de salud si existe
+                const healthStatus = window.sourcesHealth || {};
+                
                 list.innerHTML = `
                     <table class="data-table">
                         <thead>
                             <tr><th>Nombre</th><th>URL</th><th>Categoría</th><th>Estado</th><th>Acciones</th></tr>
                         </thead>
                         <tbody>
-                            ${sources.map(s => `
-                                <tr style="${!s.is_active ? 'opacity: 0.5; background: #f8fafc;' : ''}">
-                                    <td>${s.name}</td>
+                            ${sources.map(s => {
+                                const health = healthStatus[s.id];
+                                const isDown = health && !health.healthy;
+                                const rowStyle = isDown ? 'background: #fef2f2; border-left: 3px solid #ef4444;' : (!s.is_active ? 'opacity: 0.5; background: #f8fafc;' : '');
+                                
+                                return `
+                                <tr style="${rowStyle}">
+                                    <td>
+                                        ${isDown ? '<span title="Fuente caída">🔴</span>' : '✅'}
+                                        ${s.name}
+                                        ${isDown && health.error ? `<br><small style="color: #ef4444;">Error: ${health.error.substring(0, 50)}...</small>` : ''}
+                                    </td>
                                     <td><a href="${s.url || s.rss_url}" target="_blank">${s.url || s.rss_url}</a></td>
                                     <td>${s.category || '—'}</td>
                                     <td>${s.is_active 
@@ -1277,7 +1313,8 @@ https://rss.bbc.com/news/world/latam/rss.xml
                                             : '<button class="btn btn-secondary btn-sm" onclick="activateSource(' + s.id + ')">Reactivar</button>'}
                                     </td>
                                 </tr>
-                            `).join('')}
+                                `;
+                            }).join('')}
                         </tbody>
                     </table>
                 `;
@@ -1340,6 +1377,44 @@ https://rss.bbc.com/news/world/latam/rss.xml
         // ============================================
         // ARTÍCULOS
         // ============================================
+        
+        // Verificar estado de fuentes
+        async function checkSourcesHealth() {
+            const btn = event.target;
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = '⏳ Verificando...';
+            
+            try {
+                const res = await fetch(API_BASE + '/admin/sources/check-health', {
+                    method: 'POST',
+                    headers: headers()
+                });
+                
+                if (!res.ok) throw new Error('Error verificando fuentes');
+                
+                const health = await res.json();
+                
+                // Guardar estado global para loadSources
+                window.sourcesHealth = {};
+                health.sources.forEach(s => {
+                    window.sourcesHealth[s.id] = s;
+                });
+                
+                // Mostrar resumen
+                const message = `✅ Fuentes sanas: ${health.healthy}\n🔴 Fuentes caídas: ${health.unhealthy}\n📊 Total: ${health.total}`;
+                alert(message);
+                
+                // Recargar lista de fuentes para mostrar en rojo
+                loadSources();
+                
+            } catch (e) {
+                alert('Error: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
         
         async function loadArticles() {
             const tbody = document.getElementById('articles-table-body');

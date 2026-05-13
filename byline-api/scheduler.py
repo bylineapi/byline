@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime, timedelta
+from typing import Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select, delete
@@ -24,10 +25,13 @@ scorer = ImpactScorer()
 
 # ─── Job 1: Scraping ─────────────────────────────────────────────────────────
 
-async def scraping_job():
+async def scraping_job(force_date: Optional[datetime] = None):
     """
     Itera todas las fuentes activas, obtiene artículos nuevos via RSS,
     los puntúa y guarda en BD los que no sean 'discarded'.
+    
+    Args:
+        force_date: Si se proporciona, usa esta fecha para todos los artículos (solo para pruebas)
     """
     logger.info("Iniciando scraping_job...")
     session_maker = get_session_maker()
@@ -82,7 +86,7 @@ async def scraping_job():
                     }
 
                 try:
-                    articulos_crudos = await fetch_rss(fuente, profile_dict)
+                    articulos_crudos = await fetch_rss(fuente, profile_dict, force_date)
                 except Exception as e:
                     logger.error(
                         "Error scrapeando fuente '%s' (ID %d): %s",
