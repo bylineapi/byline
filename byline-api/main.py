@@ -959,7 +959,7 @@ async def trigger_manual_scrape(
         from database import get_session_maker
         
         articles_today = 0
-        active_sources = 0
+        sources_processed = 0
         
         try:
             async with get_session_maker() as new_db:
@@ -971,18 +971,25 @@ async def trigger_manual_scrape(
                 articles_today = len(result.scalars().all())
                 
                 # Contar fuentes activas procesadas
-                result_sources = await new_db.execute(
-                    select(Source).where(Source.is_active.is_(True))
-                )
-                active_sources = len(result_sources.scalars().all())
+                if parsed_source_ids:
+                    # Contar solo las fuentes seleccionadas que están activas
+                    result_sources = await new_db.execute(
+                        select(Source).where(Source.is_active.is_(True), Source.id.in_(parsed_source_ids))
+                    )
+                else:
+                    # Contar todas las fuentes activas
+                    result_sources = await new_db.execute(
+                        select(Source).where(Source.is_active.is_(True))
+                    )
+                sources_processed = len(result_sources.scalars().all())
         except Exception as stats_error:
             logger.error(f"Error obteniendo estadísticas: {stats_error}")
         
         return {
             "success": True,
-            "message": f"Scraping ejecutado en {len(active_sources)} fuente(s). Revisa los logs para detalles.",
+            "message": f"Scraping ejecutado en {sources_processed} fuente(s). Revisa los logs para detalles.",
             "articles_today": articles_today,
-            "sources_processed": len(active_sources),
+            "sources_processed": sources_processed,
             "source_ids": parsed_source_ids,
             "timestamp": datetime.utcnow().isoformat()
         }
