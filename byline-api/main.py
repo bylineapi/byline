@@ -100,6 +100,15 @@ app.add_middleware(
 
 # ─── Health ──────────────────────────────────────────────────────────────────
 
+@app.get("/")
+async def root():
+    """Endpoint raíz para health checks básicos."""
+    return {
+        "service": "Byline API",
+        "status": "running",
+        "version": "0.2.0"
+    }
+
 @app.get("/health")
 async def health_check(db: AsyncSession = Depends(get_db)):
     """Endpoint de verificación de salud del servicio y conexión a Neon."""
@@ -899,12 +908,31 @@ async def trigger_manual_scrape(
             except ValueError:
                 raise HTTPException(status_code=400, detail="Formato de fecha inválido. Use YYYY-MM-DD")
         
+        # Contar fuentes activas antes de ejecutar
+        result_sources = await db.execute(
+            select(Source).where(Source.is_active.is_(True))
+        )
+        active_sources = result_sources.scalars().all()
+        logger.info(f"📊 Fuentes activas encontradas: {len(active_sources)}")
+        
+        if len(active_sources) == 0:
+            return {
+                "success": False,
+                "message": "No hay fuentes activas configuradas. Agrega al menos una fuente RSS primero.",
+                "active_sources": 0,
+                "articles_today": 0,
+                "sources_processed": 0,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        
         # Ejecutar el job de scraping (maneja su propia sesión internamente)
         try:
             await scraping_job(force_date)
             logger.info("✅ scraping_job completado")
         except Exception as scrape_error:
             logger.error(f"Error en scraping_job: {scrape_error}")
+            import traceback
+            logger.error(traceback.format_exc())
             # No lanzar error aquí, continuar para obtener estadísticas
         
         # Crear una nueva sesión para obtener estadísticas
