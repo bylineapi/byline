@@ -346,30 +346,42 @@ class nwwp_Admin
 
     public function ajax_guardar_settings()
     {
-        check_ajax_referer('nwwp_verify_connection_nonce', 'nwwp_settings_nonce');
+        // Verificar nonce - si falla, detener con error
+        $check = check_ajax_referer('nwwp_verify_connection_nonce', 'nwwp_settings_nonce', false);
+        if (!$check) {
+            error_log('NewsWire WP: Error de nonce al guardar configuracion');
+            wp_send_json_error(array('message' => 'Error de seguridad. Recarga la página.'));
+            return;
+        }
 
         if (!current_user_can('manage_options')) {
             wp_send_json_error(array('message' => 'Sin permisos'));
         }
 
+        error_log('NewsWire WP: Guardando configuracion...');
+        error_log('NewsWire WP: POST data: ' . print_r($_POST, true));
+
         // Guardar cada opción
         if (isset($_POST['nwwp_api_key'])) {
-            update_option('nwwp_api_key', sanitize_text_field($_POST['nwwp_api_key']));
+            $api_key = sanitize_text_field($_POST['nwwp_api_key']);
+            update_option('nwwp_api_key', $api_key, true);
+            error_log('NewsWire WP: API Key guardada');
         }
         if (isset($_POST['nwwp_content_mode'])) {
             $mode = sanitize_text_field($_POST['nwwp_content_mode']);
             if (in_array($mode, array('full', 'excerpt', 'summary'), true)) {
-                update_option('nwwp_content_mode', $mode);
+                update_option('nwwp_content_mode', $mode, true);
+                error_log('NewsWire WP: Content mode guardado: ' . $mode);
             }
         }
         if (isset($_POST['nwwp_posts_per_hour'])) {
-            update_option('nwwp_posts_per_hour', absint($_POST['nwwp_posts_per_hour']));
+            update_option('nwwp_posts_per_hour', absint($_POST['nwwp_posts_per_hour']), true);
         }
         if (isset($_POST['nwwp_activar_breaking'])) {
-            update_option('nwwp_activar_breaking', (bool) $_POST['nwwp_activar_breaking']);
+            update_option('nwwp_activar_breaking', (bool) $_POST['nwwp_activar_breaking'], true);
         }
         if (isset($_POST['nwwp_default_image_id'])) {
-            update_option('nwwp_default_image_id', absint($_POST['nwwp_default_image_id']));
+            update_option('nwwp_default_image_id', absint($_POST['nwwp_default_image_id']), true);
         }
         if (isset($_POST['nwwp_category_map'])) {
             $map = json_decode(stripslashes($_POST['nwwp_category_map']), true);
@@ -382,30 +394,34 @@ class nwwp_Admin
                         $clean[$api_cat] = $wp_cat_id;
                     }
                 }
-                update_option('nwwp_category_map', $clean);
+                update_option('nwwp_category_map', $clean, true);
             }
         }
         if (isset($_POST['nwwp_extra_keywords'])) {
-            update_option('nwwp_extra_keywords', sanitize_textarea_field($_POST['nwwp_extra_keywords']));
+            update_option('nwwp_extra_keywords', sanitize_textarea_field($_POST['nwwp_extra_keywords']), true);
         }
 
         // Guardar opciones de auto-publicación
         if (isset($_POST['nwwp_auto_publish_enabled'])) {
-            update_option('nwwp_auto_publish_enabled', (bool) $_POST['nwwp_auto_publish_enabled']);
+            update_option('nwwp_auto_publish_enabled', (bool) $_POST['nwwp_auto_publish_enabled'], true);
+            error_log('NewsWire WP: Auto-publish enabled');
+        } else {
+            // Si no viene en el POST, desactivar
+            update_option('nwwp_auto_publish_enabled', false, true);
         }
         if (isset($_POST['nwwp_auto_publish_frequency'])) {
             $frequency = absint($_POST['nwwp_auto_publish_frequency']);
             // Validar que sea uno de los valores permitidos
             if (in_array($frequency, array(15, 30, 60, 120, 360), true)) {
-                update_option('nwwp_auto_publish_frequency', $frequency);
+                update_option('nwwp_auto_publish_frequency', $frequency, true);
             }
         }
         if (isset($_POST['nwwp_auto_publish_category'])) {
-            update_option('nwwp_auto_publish_category', absint($_POST['nwwp_auto_publish_category']));
+            update_option('nwwp_auto_publish_category', absint($_POST['nwwp_auto_publish_category']), true);
         }
 
         if (isset($_POST['nwwp_owner_secret'])) {
-            update_option('nwwp_owner_secret', sanitize_text_field($_POST['nwwp_owner_secret']));
+            update_option('nwwp_owner_secret', sanitize_text_field($_POST['nwwp_owner_secret']), true);
         }
         if (isset($_POST['nwwp_product_map']) && is_array($_POST['nwwp_product_map'])) {
             $clean_map = array();
@@ -416,14 +432,20 @@ class nwwp_Admin
                     $clean_map[$plan] = $product_id;
                 }
             }
-            update_option('nwwp_product_map', $clean_map);
+            update_option('nwwp_product_map', $clean_map, true);
         }
         
         // Si la auto-publicación está habilitada, ejecutar inmediatamente
         $auto_publish_enabled = get_option('nwwp_auto_publish_enabled', false);
         if ($auto_publish_enabled) {
+            error_log('NewsWire WP: Ejecutando auto-publicacion inmediata...');
             // Ejecutar auto-publicación inmediatamente de forma síncrona
-            nwwp_Cron::ejecutar_auto_publicacion_inmediata();
+            try {
+                nwwp_Cron::ejecutar_auto_publicacion_inmediata();
+                error_log('NewsWire WP: Auto-publicacion ejecutada exitosamente');
+            } catch (Exception $e) {
+                error_log('NewsWire WP: Error en auto-publicacion: ' . $e->getMessage());
+            }
         }
 
         wp_send_json_success(array(
