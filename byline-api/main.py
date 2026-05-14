@@ -109,6 +109,37 @@ async def root():
         "version": "0.2.0"
     }
 
+@app.get("/api/verify", response_model=dict)
+async def verify_api_key_public(
+    api_key: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Endpoint público para verificar API key y obtener información del cliente.
+    No requiere Owner Secret, solo la API key del cliente."""
+    from auth import verify_api_key
+
+    result = await db.execute(select(Client))
+    clients = result.scalars().all()
+
+    for client in clients:
+        if verify_api_key(api_key, client.api_key):
+            return {
+                "success": True,
+                "client_id": client.id,
+                "name": client.name,
+                "plan": client.plan.value,
+                "is_active": client.is_active,
+                "features": {
+                    "max_articles_per_day": 100 if client.plan.value == "business" else (50 if client.plan.value == "pro" else 20),
+                    "breaking_news": client.plan.value in ["pro", "business"],
+                    "category_filtering": client.plan.value in ["pro", "business"],
+                    "custom_sources": client.plan.value == "business",
+                    "priority_delivery": client.plan.value == "business",
+                }
+            }
+
+    raise HTTPException(status_code=401, detail="API key inválida")
+
 @app.get("/health")
 async def health_check(db: AsyncSession = Depends(get_db)):
     """Endpoint de verificación de salud del servicio y conexión a Neon."""

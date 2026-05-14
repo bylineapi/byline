@@ -230,6 +230,7 @@ class nwwp_Admin {
         $sources_count = 0;
 
         if (!empty($owner_secret)) {
+            // Si tiene Owner Secret, usar endpoint admin
             $verify_url = add_query_arg('api_key', $api_key, trailingslashit($api_url) . 'admin/clients/verify');
             
             $response = wp_remote_get($verify_url, array(
@@ -246,37 +247,35 @@ class nwwp_Admin {
                     $body = wp_remote_retrieve_body($response);
                     $data = json_decode($body, true);
                     
-                    if (isset($data['plan'])) {
+                    // El endpoint admin retorna array de clientes
+                    if (is_array($data) && isset($data[0]['plan'])) {
+                        $detected_plan = sanitize_text_field($data[0]['plan']);
+                    } elseif (isset($data['plan'])) {
                         $detected_plan = sanitize_text_field($data['plan']);
                     }
                 }
             }
-        } else {
-            // Sin Owner Secret, usar /health solo para verificar conectividad
-            $health_url = trailingslashit($api_url) . 'health';
-
-            $response = wp_remote_get($health_url, array(
+        }
+        
+        // Si no se detectó plan con Owner Secret o no hay Owner Secret, usar endpoint público
+        if (empty($detected_plan) || $detected_plan === 'basic') {
+            $public_verify_url = add_query_arg('api_key', $api_key, trailingslashit($api_url) . 'api/verify');
+            
+            $public_response = wp_remote_get($public_verify_url, array(
                 'timeout' => 15,
-                'headers' => array(
-                    'X-API-KEY' => $api_key,
-                ),
                 'sslverify' => true,
             ));
 
-            if (is_wp_error($response)) {
-                wp_send_json_error(array(
-                    'message' => __('No se pudo conectar: ', 'newswire-wp') . $response->get_error_message(),
-                ));
-            }
-
-            $status_code = wp_remote_retrieve_response_code($response);
-            if (200 !== $status_code) {
-                $body = wp_remote_retrieve_body($response);
-                $result_data = json_decode($body, true);
-                $msg = isset($result_data['detail']) ? sanitize_text_field($result_data['detail']) : "Código HTTP: {$status_code}";
-                wp_send_json_error(array(
-                    'message' => __('API Key inválida: ', 'newswire-wp') . $msg,
-                ));
+            if (!is_wp_error($public_response)) {
+                $public_status = wp_remote_retrieve_response_code($public_response);
+                if (200 === $public_status) {
+                    $public_body = wp_remote_retrieve_body($public_response);
+                    $public_data = json_decode($public_body, true);
+                    
+                    if (isset($public_data['plan'])) {
+                        $detected_plan = sanitize_text_field($public_data['plan']);
+                    }
+                }
             }
         }
 
@@ -423,16 +422,15 @@ class nwwp_Admin {
         array_unshift($links, $ajustes_link);
         return $links;
     }
-}
 
-function nwwp_es_modo_dueno() {
-    $owner_secret = get_option('nwwp_owner_secret', '');
+    public function es_modo_dueno() {
+        $owner_secret = get_option('nwwp_owner_secret', '');
 
-    if (empty($owner_secret)) {
-        return false;
-    }
+        if (empty($owner_secret)) {
+            return false;
+        }
 
-$health_url = trailingslashit(NWWP_API_URL) . 'health';
+        $health_url = trailingslashit(NWWP_API_URL) . 'health';
 
         $response = wp_remote_get($health_url, array(
             'timeout' => 10,
@@ -517,9 +515,4 @@ $health_url = trailingslashit(NWWP_API_URL) . 'health';
             'client' => $data,
         ));
     }
-}
-
-    $status_code = wp_remote_retrieve_response_code($response);
-
-    return 200 === $status_code;
 }
