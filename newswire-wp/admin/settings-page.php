@@ -344,8 +344,7 @@ if ($woocommerce_active && $is_owner_mode) {
                                     id="content_full"
                                     name="nwwp_content_mode"
                                     value="full"
-                                    <?php checked('full', $content_mode); ?>
-                                    <?php disabled(!nwwp_is_pro_or_higher($detected_plan)); ?> />
+                                    <?php checked('full', $content_mode); ?> />
                                 <label for="content_full">
                                     Artículo completo
                                     <?php if (!nwwp_is_pro_or_higher($detected_plan)) : ?>
@@ -353,7 +352,7 @@ if ($woocommerce_active && $is_owner_mode) {
                                     <?php endif; ?>
                                 </label>
                             </div>
-                            <div class="nwwp-radio-card selected">
+                            <div class="nwwp-radio-card <?php echo 'excerpt' === $content_mode ? 'selected' : ''; ?>">
                                 <input type="radio"
                                     id="content_excerpt"
                                     name="nwwp_content_mode"
@@ -366,8 +365,7 @@ if ($woocommerce_active && $is_owner_mode) {
                                     id="content_summary"
                                     name="nwwp_content_mode"
                                     value="summary"
-                                    <?php checked('summary', $content_mode); ?>
-                                    <?php disabled(!nwwp_is_pro_or_higher($detected_plan)); ?> />
+                                    <?php checked('summary', $content_mode); ?> />
                                 <label for="content_summary">
                                     Resumen IA
                                     <?php if (!nwwp_is_pro_or_higher($detected_plan)) : ?>

@@ -388,7 +388,7 @@ class nwwp_Admin
         if (isset($_POST['nwwp_extra_keywords'])) {
             update_option('nwwp_extra_keywords', sanitize_textarea_field($_POST['nwwp_extra_keywords']));
         }
-        
+
         // Guardar opciones de auto-publicación
         if (isset($_POST['nwwp_auto_publish_enabled'])) {
             update_option('nwwp_auto_publish_enabled', (bool) $_POST['nwwp_auto_publish_enabled']);
@@ -403,7 +403,7 @@ class nwwp_Admin
         if (isset($_POST['nwwp_auto_publish_category'])) {
             update_option('nwwp_auto_publish_category', absint($_POST['nwwp_auto_publish_category']));
         }
-        
+
         if (isset($_POST['nwwp_owner_secret'])) {
             update_option('nwwp_owner_secret', sanitize_text_field($_POST['nwwp_owner_secret']));
         }

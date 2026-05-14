@@ -62,48 +62,77 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Función para desbloquear características según el plan
     function unlockProFeatures(plan) {
-        if (plan === 'basic') return;
-        
-        // Desbloquear Artículo completo
         const contentFullRadio = document.getElementById('content_full');
-        if (contentFullRadio) {
-            contentFullRadio.disabled = false;
-            const fullCard = contentFullRadio.closest('.nwwp-radio-card');
-            if (fullCard) {
-                fullCard.classList.remove('locked');
-                fullCard.style.opacity = '1';
-                fullCard.style.cursor = 'pointer';
-            }
-        }
-        
-        // Desbloquear Resumen IA
         const contentSummaryRadio = document.getElementById('content_summary');
-        if (contentSummaryRadio) {
-            contentSummaryRadio.disabled = false;
-            const summaryCard = contentSummaryRadio.closest('.nwwp-radio-card');
-            if (summaryCard) {
-                summaryCard.classList.remove('locked');
-                summaryCard.style.opacity = '1';
-                summaryCard.style.cursor = 'pointer';
-            }
-        }
-        
-        // Desbloquear Breaking news
         const breakingCheckbox = document.getElementById('nwwp_breaking_enabled');
-        if (breakingCheckbox) {
-            breakingCheckbox.disabled = false;
-            const breakingLabel = breakingCheckbox.closest('.nwwp-toggle-label');
-            const breakingBadge = breakingLabel ? breakingLabel.querySelector('.nwwp-plan-badge') : null;
-            if (breakingBadge) {
-                breakingBadge.style.display = 'none';
-            }
-        }
-        
-        // Actualizar límite de posts por hora
         const postsPerHourInput = document.getElementById('nwwp_posts_per_hour');
-        if (postsPerHourInput) {
-            postsPerHourInput.removeAttribute('readonly');
-            postsPerHourInput.style.background = '#fff';
+        
+        if (plan === 'basic') {
+            // Deshabilitar Artículo completo
+            if (contentFullRadio) {
+                contentFullRadio.disabled = true;
+                const fullCard = contentFullRadio.closest('.nwwp-radio-card');
+                if (fullCard) {
+                    fullCard.classList.add('locked');
+                    fullCard.style.opacity = '0.5';
+                    fullCard.style.cursor = 'not-allowed';
+                }
+            }
+            
+            // Deshabilitar Resumen IA
+            if (contentSummaryRadio) {
+                contentSummaryRadio.disabled = true;
+                const summaryCard = contentSummaryRadio.closest('.nwwp-radio-card');
+                if (summaryCard) {
+                    summaryCard.classList.add('locked');
+                    summaryCard.style.opacity = '0.5';
+                    summaryCard.style.cursor = 'not-allowed';
+                }
+            }
+            
+            // Deshabilitar Breaking news
+            if (breakingCheckbox) {
+                breakingCheckbox.disabled = true;
+            }
+            
+            // Bloquear posts per hour en 2
+            if (postsPerHourInput) {
+                postsPerHourInput.setAttribute('readonly', 'readonly');
+                postsPerHourInput.value = '2';
+            }
+        } else {
+            // Desbloquear Artículo completo
+            if (contentFullRadio) {
+                contentFullRadio.disabled = false;
+                const fullCard = contentFullRadio.closest('.nwwp-radio-card');
+                if (fullCard) {
+                    fullCard.classList.remove('locked');
+                    fullCard.style.opacity = '1';
+                    fullCard.style.cursor = 'pointer';
+                }
+            }
+            
+            // Desbloquear Resumen IA
+            if (contentSummaryRadio) {
+                contentSummaryRadio.disabled = false;
+                const summaryCard = contentSummaryRadio.closest('.nwwp-radio-card');
+                if (summaryCard) {
+                    summaryCard.classList.remove('locked');
+                    summaryCard.style.opacity = '1';
+                    summaryCard.style.cursor = 'pointer';
+                }
+            }
+            
+            // Desbloquear Breaking news
+            if (breakingCheckbox) {
+                breakingCheckbox.disabled = false;
+            }
+            
+            // Desbloquear posts per hour
+            if (postsPerHourInput) {
+                postsPerHourInput.removeAttribute('readonly');
+                postsPerHourInput.style.background = '#fff';
+            }
         }
     }
 

@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Clase NWWP_Cron
  *
@@ -12,14 +13,16 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class nwwp_Cron {
+class nwwp_Cron
+{
 
     const HOOK_BREAKING_NEWS = 'nwwp_breaking_news_check';
     const HOOK_HOURLY_IMPORT = 'nwwp_hourly_import';
     const HOOK_AUTO_PUBLISH = 'nwwp_auto_publish';
     const SCHEDULE_FIVE_MIN  = 'nwwp_five_minutes';
 
-    public function __construct() {
+    public function __construct()
+    {
         add_filter('cron_schedules', array($this, 'agregar_intervalo_cinco_minutos'));
         add_filter('cron_schedules', array($this, 'agregar_intervalos_auto_publish'));
         add_action('admin_init', array($this, 'registrar_eventos_cron'));
@@ -28,15 +31,17 @@ class nwwp_Cron {
         add_action(self::HOOK_AUTO_PUBLISH, array($this, 'ejecutar_auto_publicacion'));
     }
 
-    public function agregar_intervalo_cinco_minutos($schedules) {
+    public function agregar_intervalo_cinco_minutos($schedules)
+    {
         $schedules[self::SCHEDULE_FIVE_MIN] = array(
             'interval' => 300,
             'display'  => __('Cada 5 minutos', 'newswire-wp'),
         );
         return $schedules;
     }
-    
-    public function agregar_intervalos_auto_publish($schedules) {
+
+    public function agregar_intervalos_auto_publish($schedules)
+    {
         // Agregar intervalos personalizados para auto-publicación
         $intervals = array(
             15 => 'Cada 15 minutos',
@@ -45,7 +50,7 @@ class nwwp_Cron {
             120 => 'Cada 2 horas',
             360 => 'Cada 6 horas',
         );
-        
+
         foreach ($intervals as $minutes => $label) {
             $schedule_name = 'nwwp_auto_publish_' . $minutes . 'min';
             $schedules[$schedule_name] = array(
@@ -53,11 +58,12 @@ class nwwp_Cron {
                 'display'  => __($label, 'newswire-wp'),
             );
         }
-        
+
         return $schedules;
     }
 
-    public function registrar_eventos_cron() {
+    public function registrar_eventos_cron()
+    {
         if (!wp_next_scheduled(self::HOOK_BREAKING_NEWS)) {
             wp_schedule_event(time(), self::SCHEDULE_FIVE_MIN, self::HOOK_BREAKING_NEWS);
         }
@@ -65,19 +71,19 @@ class nwwp_Cron {
         if (!wp_next_scheduled(self::HOOK_HOURLY_IMPORT)) {
             wp_schedule_event(time(), 'hourly', self::HOOK_HOURLY_IMPORT);
         }
-        
+
         // Registrar evento de auto-publicación si está habilitado
         $auto_publish_enabled = get_option('nwwp_auto_publish_enabled', false);
         if ($auto_publish_enabled) {
             $frequency = get_option('nwwp_auto_publish_frequency', '30');
             $schedule_name = 'nwwp_auto_publish_' . $frequency . 'min';
-            
+
             // Limpiar evento anterior si existe
             $timestamp = wp_next_scheduled(self::HOOK_AUTO_PUBLISH);
             if ($timestamp) {
                 wp_unschedule_event($timestamp, self::HOOK_AUTO_PUBLISH);
             }
-            
+
             // Programar nuevo evento con la frecuencia seleccionada
             wp_schedule_event(time(), $schedule_name, self::HOOK_AUTO_PUBLISH);
         } else {
@@ -89,7 +95,8 @@ class nwwp_Cron {
         }
     }
 
-    public function ejecutar_breaking_news() {
+    public function ejecutar_breaking_news()
+    {
         $api_key = get_option('nwwp_api_key', '');
 
         if (empty($api_key)) {
@@ -144,7 +151,8 @@ class nwwp_Cron {
         );
     }
 
-    public function ejecutar_import_horaria() {
+    public function ejecutar_import_horaria()
+    {
         $api_key = get_option('nwwp_api_key', '');
 
         if (empty($api_key)) {
@@ -200,7 +208,7 @@ class nwwp_Cron {
                 ));
                 $total_importados = $resultados['importados'];
                 $total_saltados   = $resultados['saltados'];
-                $errores           = array_map(function($e) {
+                $errores           = array_map(function ($e) {
                     return $e['error'];
                 }, $resultados['errores']);
             }
@@ -218,7 +226,8 @@ class nwwp_Cron {
         );
     }
 
-    private function obtener_mapeo_categorias() {
+    private function obtener_mapeo_categorias()
+    {
         $map = get_option('nwwp_category_map', array());
         if (!is_array($map)) {
             $map = array();
@@ -226,7 +235,8 @@ class nwwp_Cron {
         return $map;
     }
 
-    private function registrar_log($accion, $resultado, $mensaje) {
+    private function registrar_log($accion, $resultado, $mensaje)
+    {
         global $wpdb;
 
         $tabla = $wpdb->prefix . 'nwwp_activity_log';
@@ -242,19 +252,20 @@ class nwwp_Cron {
             array('%s', '%s', '%s', '%s')
         );
     }
-    
+
     /**
      * Ejecutar auto-publicación programada
      * 
      * Llama al scraper para obtener artículos nuevos y los publica en WordPress
      */
-    public function ejecutar_auto_publicacion() {
+    public function ejecutar_auto_publicacion()
+    {
         // Verificar si la auto-publicación está habilitada
         $auto_publish_enabled = get_option('nwwp_auto_publish_enabled', false);
         if (!$auto_publish_enabled) {
             return;
         }
-        
+
         $api_key = get_option('nwwp_api_key', '');
         if (empty($api_key)) {
             $this->registrar_log(
@@ -264,13 +275,13 @@ class nwwp_Cron {
             );
             return;
         }
-        
+
         // Obtener categoría de publicación
         $publish_category = get_option('nwwp_auto_publish_category', '');
-        
+
         // Obtener modo de contenido
         $content_mode = get_option('nwwp_content_mode', 'excerpt');
-        
+
         // Llamar a la API para obtener artículos nuevos
         $api_url = NWWP_API_URL;
         $fetch_url = add_query_arg(
@@ -280,12 +291,12 @@ class nwwp_Cron {
             ),
             trailingslashit($api_url) . 'api/articles/fetch'
         );
-        
+
         $response = wp_remote_post($fetch_url, array(
             'timeout' => 120, // 2 minutos de timeout para scraping
             'sslverify' => true,
         ));
-        
+
         if (is_wp_error($response)) {
             $this->registrar_log(
                 'auto_publish',
@@ -294,7 +305,7 @@ class nwwp_Cron {
             );
             return;
         }
-        
+
         $status_code = wp_remote_retrieve_response_code($response);
         if ($status_code !== 200) {
             $this->registrar_log(
@@ -304,10 +315,10 @@ class nwwp_Cron {
             );
             return;
         }
-        
+
         $body = wp_remote_retrieve_body($response);
         $data = json_decode($body, true);
-        
+
         if (!isset($data['success']) || !$data['success']) {
             $this->registrar_log(
                 'auto_publish',
@@ -316,9 +327,9 @@ class nwwp_Cron {
             );
             return;
         }
-        
+
         $articles_fetched = $data['articles_fetched'] ?? 0;
-        
+
         if ($articles_fetched === 0) {
             $this->registrar_log(
                 'auto_publish',
@@ -327,15 +338,15 @@ class nwwp_Cron {
             );
             return;
         }
-        
+
         // Importar los artículos obtenidos
         $api_client = new nwwp_API_Client();
         $author_manager = new nwwp_Author_Manager();
         $importer = new nwwp_Importer($api_client, $author_manager);
-        
+
         // Obtener artículos recientes de la API para importar
         $articulos = $api_client->get_news('', false, $articles_fetched);
-        
+
         if (is_wp_error($articulos) || empty($articulos)) {
             $this->registrar_log(
                 'auto_publish',
@@ -344,7 +355,7 @@ class nwwp_Cron {
             );
             return;
         }
-        
+
         // Preparar mapeo de categorías si se especificó
         $category_map = array();
         if (!empty($publish_category)) {
@@ -353,13 +364,13 @@ class nwwp_Cron {
                 '*' => absint($publish_category),
             );
         }
-        
+
         // Importar artículos
         $resultados = $importer->import_multiple($articulos, array(
             'content_mode' => $content_mode,
             'category_map' => $category_map,
         ));
-        
+
         $this->registrar_log(
             'auto_publish',
             'success',
@@ -373,7 +384,8 @@ class nwwp_Cron {
         );
     }
 
-    public static function limpiar_eventos_cron() {
+    public static function limpiar_eventos_cron()
+    {
         wp_clear_scheduled_hook(self::HOOK_BREAKING_NEWS);
         wp_clear_scheduled_hook(self::HOOK_HOURLY_IMPORT);
     }
