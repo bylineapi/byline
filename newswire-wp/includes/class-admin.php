@@ -434,7 +434,7 @@ class nwwp_Admin
             }
             update_option('nwwp_product_map', $clean_map, true);
         }
-        
+
         // Si la auto-publicación está habilitada, ejecutar inmediatamente
         $auto_publish_enabled = get_option('nwwp_auto_publish_enabled', false);
         if ($auto_publish_enabled) {

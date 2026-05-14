@@ -426,6 +426,8 @@ document.addEventListener('DOMContentLoaded', function() {
         settingsForm.addEventListener('submit', function(e) {
             e.preventDefault();
             
+            console.log('NewsWire WP: Iniciando guardado...');
+            
             // Recolectar datos del formulario
             const apiKey = document.getElementById('nwwp_api_key').value;
             
@@ -435,6 +437,7 @@ document.addEventListener('DOMContentLoaded', function() {
             contentModeInputs.forEach(function(input) {
                 if (input.checked) {
                     contentMode = input.value;
+                    console.log('NewsWire WP: Modo de contenido seleccionado:', contentMode);
                 }
             });
             
@@ -471,46 +474,60 @@ document.addEventListener('DOMContentLoaded', function() {
             saveBtn.disabled = true;
             saveBtn.textContent = 'Guardando...';
             
-            // Enviar datos por AJAX
-            if (typeof wp !== 'undefined' && wp.ajax) {
-                wp.ajax.post('nwwp_save_settings_ajax', {
-                    nwwp_settings_nonce: nwwpAdmin ? nwwpAdmin.nonce : '',
-                    nwwp_api_key: apiKey,
-                    nwwp_content_mode: contentMode,
-                    nwwp_posts_per_hour: postsPerHour,
-                    nwwp_activar_breaking: activarBreaking,
-                    nwwp_default_image_id: defaultImageId,
-                    nwwp_category_map: JSON.stringify(categoryMap),
-                    nwwp_extra_keywords: extraKeywords,
-                    nwwp_auto_publish_enabled: autoPublishEnabled,
-                    nwwp_auto_publish_frequency: autoPublishFrequency,
-                    nwwp_auto_publish_category: autoPublishCategory
-                }).done(function(response) {
-                    if (response.success) {
-                        saveMessage.innerHTML = '<span style="color:#2e7d32;">Cambios guardados correctamente</span>';
-                        saveMessage.style.display = 'inline';
-                        
-                        // Ocultar mensaje después de 3 segundos
-                        setTimeout(function() {
-                            saveMessage.style.display = 'none';
-                        }, 3000);
-                    } else {
-                        saveMessage.innerHTML = '<span style="color:#c62828;">Error: ' + 
-                            (response.data && response.data.message ? response.data.message : 'Error desconocido') + '</span>';
-                        saveMessage.style.display = 'inline';
-                    }
-                }).fail(function(response) {
-                    const errorMsg = response.responseJSON && response.responseJSON.data && response.responseJSON.data.message 
-                        ? response.responseJSON.data.message 
-                        : 'Error de conexión';
-                    saveMessage.innerHTML = '<span style="color:#c62828;">Error: ' + errorMsg + '</span>';
+            // Preparar datos para enviar
+            const formData = new FormData();
+            formData.append('action', 'nwwp_save_settings_ajax');
+            formData.append('nwwp_settings_nonce', nwwpAdmin ? nwwpAdmin.nonce : '');
+            formData.append('nwwp_api_key', apiKey);
+            formData.append('nwwp_content_mode', contentMode);
+            formData.append('nwwp_posts_per_hour', postsPerHour);
+            formData.append('nwwp_activar_breaking', activarBreaking);
+            formData.append('nwwp_default_image_id', defaultImageId);
+            formData.append('nwwp_category_map', JSON.stringify(categoryMap));
+            formData.append('nwwp_extra_keywords', extraKeywords);
+            formData.append('nwwp_auto_publish_enabled', autoPublishEnabled);
+            formData.append('nwwp_auto_publish_frequency', autoPublishFrequency);
+            formData.append('nwwp_auto_publish_category', autoPublishCategory);
+            
+            console.log('NewsWire WP: Enviando datos...', Object.fromEntries(formData));
+            
+            // Enviar con fetch API
+            fetch(nwwpAdmin ? nwwpAdmin.ajaxUrl : '/wp-admin/admin-ajax.php', {
+                method: 'POST',
+                credentials: 'same-origin',
+                body: formData
+            })
+            .then(function(response) {
+                return response.json();
+            })
+            .then(function(data) {
+                console.log('NewsWire WP: Respuesta del servidor:', data);
+                if (data.success) {
+                    saveMessage.innerHTML = '<span style="color:#2e7d32;">Cambios guardados correctamente</span>';
                     saveMessage.style.display = 'inline';
-                }).always(function() {
-                    // Restaurar botón
-                    saveBtn.disabled = false;
-                    saveBtn.textContent = originalBtnText;
-                });
-            }
+                    console.log('NewsWire WP: Configuración guardada exitosamente');
+                    
+                    // Ocultar mensaje después de 3 segundos
+                    setTimeout(function() {
+                        saveMessage.style.display = 'none';
+                    }, 3000);
+                } else {
+                    saveMessage.innerHTML = '<span style="color:#c62828;">Error: ' + 
+                        (data.data && data.data.message ? data.data.message : 'Error desconocido') + '</span>';
+                    saveMessage.style.display = 'inline';
+                    console.error('NewsWire WP: Error al guardar:', data.data);
+                }
+            })
+            .catch(function(error) {
+                console.error('NewsWire WP: Error de red:', error);
+                saveMessage.innerHTML = '<span style="color:#c62828;">Error de conexión: ' + error.message + '</span>';
+                saveMessage.style.display = 'inline';
+            })
+            .finally(function() {
+                // Restaurar botón
+                saveBtn.disabled = false;
+                saveBtn.textContent = originalBtnText;
+            });
         });
         
         // Mostrar/ocultar campos de auto-publicación

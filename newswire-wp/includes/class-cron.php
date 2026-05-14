@@ -383,14 +383,15 @@ class nwwp_Cron
             )
         );
     }
-    
+
     /**
      * Ejecutar auto-publicación inmediatamente (al guardar configuración)
      * 
      * Esta función se llama de forma síncrona después de guardar los ajustes
      * para iniciar la publicación de inmediato
      */
-    public static function ejecutar_auto_publicacion_inmediata() {
+    public static function ejecutar_auto_publicacion_inmediata()
+    {
         $cron_instance = new self();
         $cron_instance->ejecutar_auto_publicacion();
     }
