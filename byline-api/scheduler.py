@@ -127,56 +127,48 @@ async def scraping_job(force_date: Optional[datetime] = None, source_ids: Option
                             )
                         )
                         if existe.scalar_one_or_none():
-                            logger.info("⚠️ Artículo duplicado, saltando: %s", data.get("title", "")[:60])
+                            logger.info("️ Artículo duplicado, saltando: %s", data.get("title", "")[:60])
                             continue
+                        
+                        # GUARDAR TODOS los artículos - sin filtrar por score
+                        article = Article(
+                            source_id=data["source_id"],
+                            title=data["title"],
+                            content=data["content"],
+                            excerpt=data.get("excerpt", ""),
+                            image_url=data.get("image_url"),
+                            original_url=data["original_url"],
+                            category=data.get("category"),
+                            impact_score=0.0,
+                            is_breaking=False,
+                            status=ArticleStatusEnum.pending_normal,
+                            published_at=data.get("published_at"),
+                        )
+                        db.add(article)
+                        await db.commit()
+                        total_nuevos += 1
+                        logger.info("✅ Artículo guardado: %s", data.get("title", "")[:60])
 
-                        # Puntuar
-                        score_final = scorer.score(data, articulos_recientes_dicts)
-                        data["impact_score"] = score_final
-                        logger.info("📊 Artículo puntuado con: %.2f", score_final)
-
-                        # Asignar estado según score
+                        # Agregar a lista de recientes
+                        articulos_recientes_dicts.append({
+                            "source_id": data["source_id"],
+                            "title": data["title"],
+                            "content": data.get("content", ""),
+                            "published_at": data.get("published_at"),
+                            "original_url": data["original_url"],
+                        })
+                        
+                        # Verificar si es breaking news después de guardar
+                        score_final = scorer.score(data, articulos_recientes_dicts[:-1])
                         if score_final >= 80:
-                            data["is_breaking"] = True
-                            data["status"] = ArticleStatusEnum.pending_breaking
-                        elif score_final >= 20:
-                            data["status"] = ArticleStatusEnum.pending_normal
+                            article.is_breaking = True
+                            article.status = ArticleStatusEnum.pending_breaking
+                            article.impact_score = score_final
+                            await db.commit()
+                            logger.info("🔥 BREAKING NEWS: %s (score: %.2f)", data.get("title", "")[:60], score_final)
                         else:
-                            data["status"] = ArticleStatusEnum.discarded
-                            logger.info("❌ Artículo descartado (score muy bajo): %s (score: %.2f)", data.get("title", "")[:60], score_final)
-
-                        # Guardar solo no descartados
-                        if data["status"] != ArticleStatusEnum.discarded:
-                            article = Article(
-                                source_id=data["source_id"],
-                                title=data["title"],
-                                content=data["content"],
-                                excerpt=data.get("excerpt", ""),
-                                image_url=data.get("image_url"),
-                                original_url=data["original_url"],
-                                category=data.get("category"),
-                                impact_score=data["impact_score"],
-                                is_breaking=data["is_breaking"],
-                                status=data["status"],
-                                published_at=data.get("published_at"),
-                            )
-                            db.add(article)
-                            await db.commit()  # Commit inmediato por artículo
-                            total_nuevos += 1
-                            logger.info(
-                                "✅ Artículo guardado: %s (score: %.2f, status: %s)",
-                                data.get("title", "")[:60],
-                                score_final,
-                                data["status"]
-                            )
-
-                            # Agregar a lista de recientes para próximos scores
-                            articulos_recientes_dicts.append({
-                                "source_id": data["source_id"],
-                                "title": data["title"],
-                                "content": data["content"],
-                                "published_at": data.get("published_at"),
-                            })
+                            article.impact_score = score_final
+                            await db.commit()
 
                 except Exception as e:
                     logger.error(
