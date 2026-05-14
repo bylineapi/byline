@@ -414,6 +414,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const activarBreaking = breakingCheckbox && breakingCheckbox.checked ? 1 : 0;
             const defaultImageId = defaultImageIdInput ? defaultImageIdInput.value : '';
             
+            // Nuevos campos de auto-publicación
+            const autoPublishCheckbox = document.getElementById('nwwp_auto_publish_enabled');
+            const autoPublishEnabled = autoPublishCheckbox && autoPublishCheckbox.checked ? 1 : 0;
+            const autoPublishFrequency = document.getElementById('nwwp_auto_publish_frequency').value;
+            const autoPublishCategory = document.getElementById('nwwp_auto_publish_category').value;
+            
             // Recolectar mapeo de categorías
             const categoryMap = {};
             const categoryRows = categoryRowsContainer ? categoryRowsContainer.querySelectorAll('.nwwp-category-row') : [];
@@ -446,7 +452,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     nwwp_activar_breaking: activarBreaking,
                     nwwp_default_image_id: defaultImageId,
                     nwwp_category_map: JSON.stringify(categoryMap),
-                    nwwp_extra_keywords: extraKeywords
+                    nwwp_extra_keywords: extraKeywords,
+                    nwwp_auto_publish_enabled: autoPublishEnabled,
+                    nwwp_auto_publish_frequency: autoPublishFrequency,
+                    nwwp_auto_publish_category: autoPublishCategory
                 }).done(function(response) {
                     if (response.success) {
                         saveMessage.innerHTML = '<span style="color:#2e7d32;">Cambios guardados correctamente</span>';
@@ -474,5 +483,22 @@ document.addEventListener('DOMContentLoaded', function() {
                 });
             }
         });
+        
+        // Mostrar/ocultar campos de auto-publicación
+        const autoPublishCheckbox = document.getElementById('nwwp_auto_publish_enabled');
+        if (autoPublishCheckbox) {
+            autoPublishCheckbox.addEventListener('change', function() {
+                const frequencyRow = document.getElementById('nwwp-auto-publish-frequency-row');
+                const categoryRow = document.getElementById('nwwp-auto-publish-category-row');
+                
+                if (this.checked) {
+                    if (frequencyRow) frequencyRow.style.display = 'block';
+                    if (categoryRow) categoryRow.style.display = 'block';
+                } else {
+                    if (frequencyRow) frequencyRow.style.display = 'none';
+                    if (categoryRow) categoryRow.style.display = 'none';
+                }
+            });
+        }
     }
 });

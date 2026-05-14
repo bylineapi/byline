@@ -27,11 +27,13 @@ $nwwp_sources = get_option('nwwp_sources', array());
 $last_sync = get_option('nwwp_last_sync', '');
 
 // Funciones helper para verificar planes
-function nwwp_is_pro_or_higher($plan) {
+function nwwp_is_pro_or_higher($plan)
+{
     return in_array($plan, array('pro', 'business'), true);
 }
 
-function nwwp_is_business($plan) {
+function nwwp_is_business($plan)
+{
     return $plan === 'business';
 }
 
@@ -421,6 +423,81 @@ if ($woocommerce_active && $is_owner_mode) {
                         </div>
                         <p class="nwwp-form-hint">
                             Publica noticias urgentes en tiempo real, sin esperar el ciclo horario.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Auto-publicación programada -->
+                <div class="nwwp-form-row">
+                    <div class="nwwp-form-label">
+                        <label>Auto-publicación</label>
+                    </div>
+                    <div class="nwwp-form-input">
+                        <div class="nwwp-toggle-label">
+                            <label class="nwwp-toggle">
+                                <input type="checkbox"
+                                    id="nwwp_auto_publish_enabled"
+                                    name="nwwp_auto_publish_enabled"
+                                    value="1"
+                                    <?php checked(1, get_option('nwwp_auto_publish_enabled', 0)); ?>
+                                    <?php disabled(!nwwp_is_pro_or_higher($detected_plan)); ?> />
+                                <span class="nwwp-toggle-slider"></span>
+                            </label>
+                            <?php if (!nwwp_is_pro_or_higher($detected_plan)) : ?>
+                                <span class="nwwp-plan-badge">Solo Plan Pro</span>
+                            <?php endif; ?>
+                            <span>Publicar artículos automáticamente</span>
+                        </div>
+                        <p class="nwwp-form-hint">
+                            El plugin llamará al scraper automáticamente para obtener contenido nuevo y publicarlo en tu sitio.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Frecuencia de auto-publicación -->
+                <div class="nwwp-form-row" id="nwwp-auto-publish-frequency-row" style="display: <?php echo get_option('nwwp_auto_publish_enabled', 0) ? 'block' : 'none'; ?>;">
+                    <div class="nwwp-form-label">
+                        <label for="nwwp_auto_publish_frequency">Frecuencia de publicación</label>
+                    </div>
+                    <div class="nwwp-form-input">
+                        <select id="nwwp_auto_publish_frequency"
+                            name="nwwp_auto_publish_frequency"
+                            <?php disabled(!nwwp_is_pro_or_higher($detected_plan)); ?>>
+                            <option value="15" <?php selected('15', get_option('nwwp_auto_publish_frequency', '30')); ?>>Cada 15 minutos</option>
+                            <option value="30" <?php selected('30', get_option('nwwp_auto_publish_frequency', '30')); ?>>Cada 30 minutos</option>
+                            <option value="60" <?php selected('60', get_option('nwwp_auto_publish_frequency', '30')); ?>>Cada hora</option>
+                            <option value="120" <?php selected('120', get_option('nwwp_auto_publish_frequency', '30')); ?>>Cada 2 horas</option>
+                            <option value="360" <?php selected('360', get_option('nwwp_auto_publish_frequency', '30')); ?>>Cada 6 horas</option>
+                        </select>
+                        <p class="nwwp-form-hint">
+                            Cada cuánto tiempo el plugin debe solicitar artículos nuevos al scraper.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Categoría de publicación -->
+                <div class="nwwp-form-row" id="nwwp-auto-publish-category-row" style="display: <?php echo get_option('nwwp_auto_publish_enabled', 0) ? 'block' : 'none'; ?>;">
+                    <div class="nwwp-form-label">
+                        <label for="nwwp_auto_publish_category">Categoría de WordPress</label>
+                    </div>
+                    <div class="nwwp-form-input">
+                        <?php
+                        $categories = get_categories(array('hide_empty' => false));
+                        $selected_category = get_option('nwwp_auto_publish_category', '');
+                        ?>
+                        <select id="nwwp_auto_publish_category"
+                            name="nwwp_auto_publish_category"
+                            <?php disabled(!nwwp_is_pro_or_higher($detected_plan)); ?>>
+                            <option value="">-- Seleccionar categoría --</option>
+                            <?php foreach ($categories as $cat) : ?>
+                                <option value="<?php echo esc_attr($cat->term_id); ?>"
+                                    <?php selected($cat->term_id, $selected_category); ?>>
+                                    <?php echo esc_html($cat->name); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                        <p class="nwwp-form-hint">
+                            Los artículos se publicarán en esta categoría de WordPress.
                         </p>
                     </div>
                 </div>

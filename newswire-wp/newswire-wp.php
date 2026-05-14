@@ -114,6 +114,19 @@ function nwwp_init() {
     }
 }
 
+// ─── Funciones auxiliares ──────────────────────────────────────────────────
+
+/**
+ * Verifica si el plugin está en Modo Dueño (owner mode).
+ * El Modo Dueño está activo cuando se ha configurado un owner_secret.
+ *
+ * @return bool True si está en Modo Dueño, False en caso contrario.
+ */
+function nwwp_es_modo_dueno() {
+    $owner_secret = get_option('nwwp_owner_secret', '');
+    return !empty($owner_secret);
+}
+
 // ─── Integración WooCommerce (Modo Dueño) ────────────────────────────────────
 
 add_action('plugins_loaded', 'nwwp_cargar_woocommerce_integration');

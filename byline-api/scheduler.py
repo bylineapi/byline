@@ -286,3 +286,118 @@ def stop_scheduler():
     if scheduler.running:
         scheduler.shutdown(wait=False)
         logger.info("Scheduler detenido.")
+
+
+async def execute_scraping(client_id: Optional[int] = None, max_sources: int = 10, limit: int = 5) -> int:
+    """
+    Función exportable para ejecutar scraping bajo demanda desde la API.
+    
+    Args:
+        client_id: ID del cliente que solicita el scraping (None = todas las fuentes)
+        max_sources: Número máximo de fuentes a procesar
+        limit: Límite de artículos por fuente
+        
+    Returns:
+        int: Número de artículos nuevos obtenidos
+    """
+    logger.info("Ejecutando scraping bajo demanda para cliente %s (max_sources=%d, limit=%d)", 
+                client_id, max_sources, limit)
+    
+    # Obtener fuentes activas
+    async with get_session_maker() as db:
+        query = select(Source).where(Source.is_active.is_(True))
+        
+        # Si se especifica client_id, filtrar sources del cliente
+        # Por ahora, procesamos todas las fuentes activas
+        
+        result = await db.execute(query)
+        fuentes = result.scalars().all()
+        
+        # Limitar número de fuentes según plan
+        if len(fuentes) > max_sources:
+            fuentes = fuentes[:max_sources]
+        
+        if not fuentes:
+            logger.info("No hay fuentes activas disponibles")
+            return 0
+        
+        # Obtener artículos recientes para deduplicación
+        hace_2h = datetime.utcnow() - timedelta(hours=2)
+        result_recent = await db.execute(
+            select(Article).where(Article.created_at >= hace_2h)
+        )
+        articulos_recientes = result_recent.scalars().all()
+    
+    # Convertir URLs recientes para deduplicación
+    urls_existentes = {a.original_url for a in articulos_recientes if a.original_url}
+    
+    total_nuevos = 0
+    
+    # Procesar cada fuente
+    for fuente in fuentes:
+        try:
+            # Obtener perfil de la fuente
+            async with get_session_maker() as db:
+                result_profile = await db.execute(
+                    select(SourceProfile).where(SourceProfile.source_id == fuente.id)
+                )
+                profile = result_profile.scalar_one_or_none()
+                profile_dict = None
+                
+                if profile and profile.confidence_score >= MIN_CONFIDENCE_FOR_PROFILER:
+                    profile_dict = {
+                        "title_selector": profile.title_selector,
+                        "body_selector": profile.body_selector,
+                        "image_selector": profile.image_selector,
+                        "date_selector": profile.date_selector,
+                        "author_selector": profile.author_selector,
+                        "confidence_score": profile.confidence_score,
+                    }
+            
+            # Hacer scraping de la fuente
+            articles_data = await fetch_rss(fuente.rss_url, limit=limit)
+            
+            if not articles_data:
+                continue
+            
+            # Guardar artículos nuevos
+            for data in articles_data:
+                # Verificar duplicado
+                if data.get("original_url") in urls_existentes:
+                    continue
+                
+                # Guardar artículo
+                async with get_session_maker() as db:
+                    article = Article(
+                        source_id=fuente.id,
+                        title=data["title"],
+                        content=data["content"],
+                        excerpt=data.get("excerpt", ""),
+                        image_url=data.get("image_url"),
+                        original_url=data["original_url"],
+                        category=data.get("category"),
+                        impact_score=0.0,
+                        is_breaking=False,
+                        status=ArticleStatusEnum.pending_normal,
+                        published_at=data.get("published_at"),
+                    )
+                    db.add(article)
+                    await db.commit()
+                    total_nuevos += 1
+                    urls_existentes.add(data["original_url"])
+                    
+                    logger.info("✅ Artículo obtenido: %s", data.get("title", "")[:60])
+                    
+                    # Si llegamos al límite, detener
+                    if total_nuevos >= limit:
+                        break
+            
+            if total_nuevos >= limit:
+                break
+                
+        except Exception as e:
+            logger.error("Error procesando fuente %s: %s", fuente.name, str(e))
+            continue
+    
+    logger.info("Scraping bajo demanda completado: %d artículos nuevos", total_nuevos)
+    return total_nuevos

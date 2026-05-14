@@ -140,6 +140,48 @@ async def verify_api_key_public(
 
     raise HTTPException(status_code=401, detail="API key inválida")
 
+
+@app.post("/api/articles/fetch", response_model=dict)
+async def fetch_articles(
+    api_key: str = Query(...),
+    limit: int = Query(5, ge=1, le=20),
+    db: AsyncSession = Depends(get_db),
+):
+    """Endpoint para que el plugin WordPress solicite artículos nuevos al scraper.
+    No requiere Owner Secret, solo la API key del cliente."""
+    from auth import verify_api_key
+    from scheduler import execute_scraping
+
+    result = await db.execute(select(Client))
+    clients = result.scalars().all()
+
+    for client in clients:
+        if verify_api_key(api_key, client.api_key):
+            if not client.is_active:
+                raise HTTPException(status_code=403, detail="Cliente inactivo")
+
+            # Ejecutar scraping para obtener artículos nuevos
+            try:
+                # Limitar sources según plan
+                max_sources = 3 if client.plan.value == "basic" else (10 if client.plan.value == "pro" else 20)
+                
+                # Ejecutar scraping
+                articles_fetched = await execute_scraping(
+                    client_id=client.id,
+                    max_sources=max_sources,
+                    limit=limit
+                )
+                
+                return {
+                    "success": True,
+                    "articles_fetched": articles_fetched,
+                    "message": f"Se obtuvieron {articles_fetched} artículos nuevos"
+                }
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Error ejecutando scraping: {str(e)}")
+
+    raise HTTPException(status_code=401, detail="API key inválida")
+
 @app.get("/health")
 async def health_check(db: AsyncSession = Depends(get_db)):
     """Endpoint de verificación de salud del servicio y conexión a Neon."""

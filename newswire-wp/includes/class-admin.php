@@ -302,7 +302,7 @@ class nwwp_Admin
         }
 
         update_option('nwwp_detected_plan', $detected_plan, true);
-        
+
         // GUARDAR LA API KEY permanentemente en la base de datos
         update_option('nwwp_api_key', $api_key, true);
 
@@ -388,6 +388,22 @@ class nwwp_Admin
         if (isset($_POST['nwwp_extra_keywords'])) {
             update_option('nwwp_extra_keywords', sanitize_textarea_field($_POST['nwwp_extra_keywords']));
         }
+        
+        // Guardar opciones de auto-publicación
+        if (isset($_POST['nwwp_auto_publish_enabled'])) {
+            update_option('nwwp_auto_publish_enabled', (bool) $_POST['nwwp_auto_publish_enabled']);
+        }
+        if (isset($_POST['nwwp_auto_publish_frequency'])) {
+            $frequency = absint($_POST['nwwp_auto_publish_frequency']);
+            // Validar que sea uno de los valores permitidos
+            if (in_array($frequency, array(15, 30, 60, 120, 360), true)) {
+                update_option('nwwp_auto_publish_frequency', $frequency);
+            }
+        }
+        if (isset($_POST['nwwp_auto_publish_category'])) {
+            update_option('nwwp_auto_publish_category', absint($_POST['nwwp_auto_publish_category']));
+        }
+        
         if (isset($_POST['nwwp_owner_secret'])) {
             update_option('nwwp_owner_secret', sanitize_text_field($_POST['nwwp_owner_secret']));
         }
