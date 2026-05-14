@@ -418,8 +418,18 @@ class nwwp_Admin
             }
             update_option('nwwp_product_map', $clean_map);
         }
+        
+        // Si la auto-publicación está habilitada, ejecutar inmediatamente
+        $auto_publish_enabled = get_option('nwwp_auto_publish_enabled', false);
+        if ($auto_publish_enabled) {
+            // Ejecutar auto-publicación inmediatamente de forma síncrona
+            nwwp_Cron::ejecutar_auto_publicacion_inmediata();
+        }
 
-        wp_send_json_success(array('message' => 'Configuración guardada correctamente'));
+        wp_send_json_success(array(
+            'message' => 'Configuración guardada correctamente',
+            'auto_publish_triggered' => $auto_publish_enabled
+        ));
     }
 
     public function cargar_assets($hook)
