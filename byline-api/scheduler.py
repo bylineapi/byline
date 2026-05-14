@@ -127,13 +127,13 @@ async def scraping_job(force_date: Optional[datetime] = None, source_ids: Option
                             )
                         )
                         if existe.scalar_one_or_none():
-                            logger.debug("Artículo duplicado, saltando: %s", data["original_url"][:80])
+                            logger.info("⚠️ Artículo duplicado, saltando: %s", data.get("title", "")[:60])
                             continue
 
                         # Puntuar
                         score_final = scorer.score(data, articulos_recientes_dicts)
                         data["impact_score"] = score_final
-                        logger.debug("Artículo puntuado con: %.2f", score_final)
+                        logger.info("📊 Artículo puntuado con: %.2f", score_final)
 
                         # Asignar estado según score
                         if score_final >= 80:
@@ -143,7 +143,7 @@ async def scraping_job(force_date: Optional[datetime] = None, source_ids: Option
                             data["status"] = ArticleStatusEnum.pending_normal
                         else:
                             data["status"] = ArticleStatusEnum.discarded
-                            logger.debug("Artículo descartado (score bajo): %s", data.get("title", "")[:60])
+                            logger.info("❌ Artículo descartado (score bajo): %s (score: %.2f)", data.get("title", "")[:60], score_final)
 
                         # Guardar solo no descartados
                         if data["status"] != ArticleStatusEnum.discarded:
