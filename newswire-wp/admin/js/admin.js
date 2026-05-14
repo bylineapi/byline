@@ -474,7 +474,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Enviar datos por AJAX
             if (typeof wp !== 'undefined' && wp.ajax) {
                 wp.ajax.post('nwwp_save_settings_ajax', {
-                    nonce: nwwpAdmin ? nwwpAdmin.nonce : '',
+                    nwwp_settings_nonce: nwwpAdmin ? nwwpAdmin.nonce : '',
                     nwwp_api_key: apiKey,
                     nwwp_content_mode: contentMode,
                     nwwp_posts_per_hour: postsPerHour,
