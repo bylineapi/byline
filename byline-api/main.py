@@ -297,6 +297,107 @@ async def create_source(
     return SourceOut.model_validate(source)
 
 
+@app.post("/admin/sources/add-salud", response_model=dict)
+async def add_salud_source(
+    db: AsyncSession = Depends(get_db),
+    _=Depends(verify_admin_secret),
+):
+    """Agrega automáticamente la fuente de Salud de Diario Libre con análisis HTML."""
+    import requests
+    from sqlalchemy import select
+    
+    SALUD_URL = "https://www.diariolibre.com/actualidad/salud"
+    SALUD_RSS = "https://www.diariolibre.com/rss/salud.xml"
+    
+    try:
+        # Verificar si ya existe
+        result = await db.execute(
+            select(Source).where(Source.rss_url == SALUD_RSS)
+        )
+        existente = result.scalar_one_or_none()
+        
+        if existente:
+            return {
+                "success": False,
+                "message": f"La fuente ya existe (ID: {existente.id})",
+                "source_id": existente.id
+            }
+        
+        # Descargar y analizar HTML
+        response = requests.get(SALUD_URL, timeout=30, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; BylineBot/1.0)"
+        })
+        response.raise_for_status()
+        html = response.text
+        
+        profiler = HTMLProfiler()
+        
+        # Extraer primer enlace de artículo
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+        
+        article_link = None
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if "/actualidad/salud/" in href and href.startswith("http"):
+                article_link = href
+                break
+        
+        analisis = None
+        if article_link:
+            try:
+                article_response = requests.get(article_link, timeout=30, headers={
+                    "User-Agent": "Mozilla/5.0 (compatible; BylineBot/1.0)"
+                })
+                article_response.raise_for_status()
+                analisis = profiler.analyze(article_response.text, article_link)
+            except Exception as e:
+                logger.warning(f"No se pudo analizar artículo individual: {e}")
+        
+        # Crear fuente
+        nueva_fuente = Source(
+            name="Diario Libre - Salud",
+            rss_url=SALUD_RSS,
+            url=SALUD_URL,
+            category="salud",
+            is_active=True
+        )
+        db.add(nueva_fuente)
+        await db.flush()
+        await db.refresh(nueva_fuente)
+        
+        # Crear perfil si el análisis fue exitoso
+        perfil_creado = False
+        if analisis and analisis.get('confidence_score', 0) >= 0.7:
+            perfil = SourceProfile(
+                source_id=nueva_fuente.id,
+                title_selector=analisis.get('title_selector'),
+                body_selector=analisis.get('body_selector'),
+                image_selector=analisis.get('image_selector'),
+                date_selector=analisis.get('date_selector'),
+                author_selector=analisis.get('author_selector'),
+                confidence_score=analisis['confidence_score'],
+            )
+            db.add(perfil)
+            perfil_creado = True
+        
+        await db.commit()
+        
+        return {
+            "success": True,
+            "message": "Fuente de Salud agregada exitosamente",
+            "source_id": nueva_fuente.id,
+            "profile_created": perfil_creado,
+            "confidence_score": analisis.get('confidence_score') if analisis else None
+        }
+        
+    except Exception as e:
+        logger.error(f"Error agregando fuente de Salud: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/admin/sources/bulk", response_model=dict)
 async def create_sources_bulk(
     data: dict,
