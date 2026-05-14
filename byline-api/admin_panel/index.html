@@ -604,8 +604,8 @@
                     <button class="btn btn-secondary" onclick="checkSourcesHealth()" style="font-size: 13px; padding: 6px 12px;">
                         🔍 Verificar Estado de Fuentes
                     </button>
-                    <button class="btn btn-primary" onclick="addSaludSource()" style="font-size: 13px; padding: 6px 12px;">
-                        🏥 Agregar Fuente Salud (DL)
+                    <button class="btn btn-primary" onclick="addDiarioLibreCategories()" style="font-size: 13px; padding: 6px 12px;">
+                         Agregar Diario Libre (5 categorías)
                     </button>
                 </h2>
                 <div style="display: flex; gap: 8px; margin-bottom: 16px;">
@@ -1577,41 +1577,53 @@ Esta acción no se puede deshacer.`;
             }
         }
         
-        // Agregar fuente de Salud de Diario Libre
-        async function addSaludSource() {
-            if (!confirm('¿Agregar la fuente de Salud de Diario Libre con análisis HTML automático?')) {
+        // Agregar todas las categorías de Diario Libre
+        async function addDiarioLibreCategories() {
+            if (!confirm('¿Agregar 5 categorías de Diario Libre con análisis HTML automático?\n\n• Nacional\n• Salud\n• Política\n• Economía\n• Deportes')) {
                 return;
             }
             
             try {
-                alert('🔍 Analizando HTML de Diario Libre - Salud...\n\nEsto tomará unos segundos.');
+                alert('🔍 Analizando HTML de Diario Libre...\n\nEsto tomará unos 10-15 segundos.');
                 
-                const res = await fetch(API_BASE + '/admin/sources/add-salud', {
+                const res = await fetch(API_BASE + '/admin/sources/add-diario-libre', {
                     method: 'POST',
                     headers: headers()
                 });
                 
                 if (!res.ok) {
                     const error = await res.json();
-                    throw new Error(error.detail || 'Error agregando fuente');
+                    throw new Error(error.detail || 'Error agregando fuentes');
                 }
                 
                 const result = await res.json();
                 
                 if (result.success) {
-                    let message = `✅ Fuente agregada exitosamente!\n\n`;
-                    message += `ID: ${result.source_id}\n`;
-                    message += `Perfil HTML: ${result.profile_created ? 'Sí' : 'No'}\n`;
-                    if (result.confidence_score) {
-                        message += `Confianza: ${(result.confidence_score * 100).toFixed(0)}%\n`;
+                    let message = `✅ ${result.message}\n\n`;
+                    
+                    if (result.fuentes_creadas.length > 0) {
+                        message += `📰 Fuentes creadas:\n`;
+                        result.fuentes_creadas.forEach(f => {
+                            message += `  • ${f.name} (ID: ${f.id})\n`;
+                        });
                     }
-                    message += `\nAhora puedes ejecutar scraping de esta fuente.`;
+                    
+                    if (result.fuentes_existentes.length > 0) {
+                        message += `\n️  Ya existentes:\n`;
+                        result.fuentes_existentes.forEach(f => {
+                            message += `  • ${f}\n`;
+                        });
+                    }
+                    
+                    if (result.profile_applied) {
+                        message += `\n📊 Perfil HTML aplicado con ${(result.confidence_score * 100).toFixed(0)}% de confianza`;
+                    }
+                    
+                    message += `\n\nAhora puedes ejecutar scraping!`;
                     alert(message);
                     
                     // Recargar fuentes
                     loadSources();
-                } else {
-                    alert('⚠️ ' + result.message);
                 }
                 
             } catch (e) {

@@ -297,102 +297,138 @@ async def create_source(
     return SourceOut.model_validate(source)
 
 
-@app.post("/admin/sources/add-salud", response_model=dict)
-async def add_salud_source(
+@app.post("/admin/sources/add-diario-libre", response_model=dict)
+async def add_diario_libre_categories(
     db: AsyncSession = Depends(get_db),
     _=Depends(verify_admin_secret),
 ):
-    """Agrega automáticamente la fuente de Salud de Diario Libre con análisis HTML."""
+    """Agrega automáticamente todas las categorías principales de Diario Libre con análisis HTML."""
     import requests
     from sqlalchemy import select
     
-    SALUD_URL = "https://www.diariolibre.com/actualidad/salud"
-    SALUD_RSS = "https://www.diariolibre.com/rss/salud.xml"
+    # Lista de categorías de Diario Libre
+    CATEGORIAS = [
+        {
+            "name": "Diario Libre - Nacional",
+            "url": "https://www.diariolibre.com/actualidad/nacional",
+            "rss": "https://www.diariolibre.com/rss/actualidad.xml",
+            "category": "nacional"
+        },
+        {
+            "name": "Diario Libre - Salud",
+            "url": "https://www.diariolibre.com/actualidad/salud",
+            "rss": "https://www.diariolibre.com/rss/salud.xml",
+            "category": "salud"
+        },
+        {
+            "name": "Diario Libre - Política",
+            "url": "https://www.diariolibre.com/politica",
+            "rss": "https://www.diariolibre.com/rss/politica.xml",
+            "category": "politica"
+        },
+        {
+            "name": "Diario Libre - Economía",
+            "url": "https://www.diariolibre.com/economia",
+            "rss": "https://www.diariolibre.com/rss/economia.xml",
+            "category": "economia"
+        },
+        {
+            "name": "Diario Libre - Deportes",
+            "url": "https://www.diariolibre.com/deportes",
+            "rss": "https://www.diariolibre.com/rss/deportes.xml",
+            "category": "deportes"
+        },
+    ]
     
     try:
-        # Verificar si ya existe
-        result = await db.execute(
-            select(Source).where(Source.rss_url == SALUD_RSS)
-        )
-        existente = result.scalar_one_or_none()
+        # 1. Analizar primer artículo para aprender selectores
+        profiler = HTMLProfiler()
+        analisis = None
         
-        if existente:
-            return {
-                "success": False,
-                "message": f"La fuente ya existe (ID: {existente.id})",
-                "source_id": existente.id
-            }
-        
-        # Descargar y analizar HTML
-        response = requests.get(SALUD_URL, timeout=30, headers={
+        primera_cat = CATEGORIAS[0]
+        response = requests.get(primera_cat["url"], timeout=30, headers={
             "User-Agent": "Mozilla/5.0 (compatible; BylineBot/1.0)"
         })
         response.raise_for_status()
-        html = response.text
         
-        profiler = HTMLProfiler()
-        
-        # Extraer primer enlace de artículo
         from bs4 import BeautifulSoup
-        soup = BeautifulSoup(html, "html.parser")
+        soup = BeautifulSoup(response.text, "html.parser")
         
+        # Buscar primer enlace a artículo
         article_link = None
         for a in soup.find_all("a", href=True):
             href = a["href"]
-            if "/actualidad/salud/" in href and href.startswith("http"):
+            if ("/actualidad/" in href or "/politica/" in href or "/economia/" in href) and href.startswith("http"):
                 article_link = href
                 break
         
-        analisis = None
         if article_link:
-            try:
-                article_response = requests.get(article_link, timeout=30, headers={
-                    "User-Agent": "Mozilla/5.0 (compatible; BylineBot/1.0)"
-                })
-                article_response.raise_for_status()
-                analisis = profiler.analyze(article_response.text, article_link)
-            except Exception as e:
-                logger.warning(f"No se pudo analizar artículo individual: {e}")
+            article_resp = requests.get(article_link, timeout=30, headers={
+                "User-Agent": "Mozilla/5.0 (compatible; BylineBot/1.0)"
+            })
+            article_resp.raise_for_status()
+            analisis = profiler.analyze(article_resp.text, article_link)
+            logger.info(f"Selectores aprendidos con confidence: {analisis['confidence_score']:.0%}")
         
-        # Crear fuente
-        nueva_fuente = Source(
-            name="Diario Libre - Salud",
-            rss_url=SALUD_RSS,
-            url=SALUD_URL,
-            category="salud",
-            is_active=True
-        )
-        db.add(nueva_fuente)
-        await db.flush()
-        await db.refresh(nueva_fuente)
+        # 2. Agregar todas las categorías
+        fuentes_creadas = []
+        fuentes_existentes = []
         
-        # Crear perfil si el análisis fue exitoso
-        perfil_creado = False
-        if analisis and analisis.get('confidence_score', 0) >= 0.7:
-            perfil = SourceProfile(
-                source_id=nueva_fuente.id,
-                title_selector=analisis.get('title_selector'),
-                body_selector=analisis.get('body_selector'),
-                image_selector=analisis.get('image_selector'),
-                date_selector=analisis.get('date_selector'),
-                author_selector=analisis.get('author_selector'),
-                confidence_score=analisis['confidence_score'],
+        for cat in CATEGORIAS:
+            # Verificar si ya existe
+            result = await db.execute(
+                select(Source).where(Source.rss_url == cat["rss"])
             )
-            db.add(perfil)
-            perfil_creado = True
+            existente = result.scalar_one_or_none()
+            
+            if existente:
+                fuentes_existentes.append(cat["name"])
+                continue
+            
+            # Crear fuente
+            nueva_fuente = Source(
+                name=cat["name"],
+                rss_url=cat["rss"],
+                url=cat["url"],
+                category=cat["category"],
+                is_active=True
+            )
+            db.add(nueva_fuente)
+            await db.flush()
+            await db.refresh(nueva_fuente)
+            
+            # Crear perfil con los selectores aprendidos
+            if analisis and analisis.get('confidence_score', 0) >= 0.6:
+                perfil = SourceProfile(
+                    source_id=nueva_fuente.id,
+                    title_selector=analisis.get('title_selector'),
+                    body_selector=analisis.get('body_selector'),
+                    image_selector=analisis.get('image_selector'),
+                    date_selector=analisis.get('date_selector'),
+                    author_selector=analisis.get('author_selector'),
+                    confidence_score=analisis['confidence_score'],
+                )
+                db.add(perfil)
+            
+            fuentes_creadas.append({
+                "name": cat["name"],
+                "id": nueva_fuente.id,
+                "category": cat["category"]
+            })
         
         await db.commit()
         
         return {
             "success": True,
-            "message": "Fuente de Salud agregada exitosamente",
-            "source_id": nueva_fuente.id,
-            "profile_created": perfil_creado,
+            "message": f"Se agregaron {len(fuentes_creadas)} categorías de Diario Libre",
+            "fuentes_creadas": fuentes_creadas,
+            "fuentes_existentes": fuentes_existentes,
+            "profile_applied": analisis is not None,
             "confidence_score": analisis.get('confidence_score') if analisis else None
         }
         
     except Exception as e:
-        logger.error(f"Error agregando fuente de Salud: {e}")
+        logger.error(f"Error agregando categorías de Diario Libre: {e}")
         import traceback
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
