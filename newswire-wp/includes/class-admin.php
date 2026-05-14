@@ -302,6 +302,9 @@ class nwwp_Admin
         }
 
         update_option('nwwp_detected_plan', $detected_plan, true);
+        
+        // GUARDAR LA API KEY permanentemente en la base de datos
+        update_option('nwwp_api_key', $api_key, true);
 
         // Obtener fuentes disponibles
         $sources_count = 0;
