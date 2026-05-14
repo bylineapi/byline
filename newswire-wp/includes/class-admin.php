@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Clase NWWP_Admin
  *
@@ -11,11 +12,13 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class nwwp_Admin {
+class nwwp_Admin
+{
 
     const PAGE_SLUG = 'newswire-wp';
 
-    public function __construct() {
+    public function __construct()
+    {
         add_action('admin_menu', array($this, 'registrar_menu'));
         add_action('admin_init', array($this, 'registrar_configuracion'));
         add_action('wp_ajax_nwwp_verify_connection', array($this, 'ajax_verificar_conexion'));
@@ -26,7 +29,8 @@ class nwwp_Admin {
         add_filter('plugin_action_links_' . plugin_basename(nwwp_PLUGIN_DIR . 'newswire-wp.php'), array($this, 'agregar_enlace_ajustes'));
     }
 
-    public function registrar_menu() {
+    public function registrar_menu()
+    {
         add_menu_page(
             __('NewsWire WP', 'newswire-wp'),
             __('NewsWire WP', 'newswire-wp'),
@@ -47,11 +51,13 @@ class nwwp_Admin {
         );
     }
 
-    public function pagina_principal() {
+    public function pagina_principal()
+    {
         include nwwp_PLUGIN_DIR . 'admin/settings-page.php';
     }
 
-    public function registrar_configuracion() {
+    public function registrar_configuracion()
+    {
         register_setting('nwwp_settings_group', 'nwwp_api_key', array(
             'sanitize_callback' => 'sanitize_text_field',
         ));
@@ -93,7 +99,8 @@ class nwwp_Admin {
         ));
     }
 
-    public function sanitize_product_map($value) {
+    public function sanitize_product_map($value)
+    {
         if (is_string($value)) {
             $decoded = json_decode($value, true);
             if (is_array($decoded)) {
@@ -122,7 +129,8 @@ class nwwp_Admin {
         return $clean;
     }
 
-    public function ajax_verificar_owner_secret() {
+    public function ajax_verificar_owner_secret()
+    {
         check_ajax_referer('nwwp_verify_owner_nonce', 'nonce');
 
         if (!current_user_can('manage_options')) {
@@ -167,23 +175,31 @@ class nwwp_Admin {
         ));
     }
 
-    public function sanitize_content_mode($value) {
+    public function sanitize_content_mode($value)
+    {
         $allowed = array('full', 'excerpt', 'summary');
         return in_array($value, $allowed, true) ? $value : 'excerpt';
     }
 
-    public function sanitize_posts_per_hour($value) {
+    public function sanitize_posts_per_hour($value)
+    {
         $value = absint($value);
         $plan  = get_option('nwwp_detected_plan', 'basic');
 
+        // Basic: máximo 2, Pro: máximo 50, Business: máximo 100
         if ('basic' === $plan) {
             return min($value, 2);
+        } elseif ('pro' === $plan) {
+            return max(1, min($value, 50));
+        } elseif ('business' === $plan) {
+            return max(1, min($value, 100));
         }
 
         return max(1, min($value, 999));
     }
 
-    public function sanitize_category_map($value) {
+    public function sanitize_category_map($value)
+    {
         // Si viene como string (JSON), decodificarlo
         if (is_string($value)) {
             $decoded = json_decode($value, true);
@@ -210,7 +226,8 @@ class nwwp_Admin {
         return $clean;
     }
 
-    public function ajax_verificar_conexion() {
+    public function ajax_verificar_conexion()
+    {
         check_ajax_referer('nwwp_verify_connection_nonce', 'nonce');
 
         if (!current_user_can('manage_options')) {
@@ -232,7 +249,7 @@ class nwwp_Admin {
         if (!empty($owner_secret)) {
             // Si tiene Owner Secret, usar endpoint admin
             $verify_url = add_query_arg('api_key', $api_key, trailingslashit($api_url) . 'admin/clients/verify');
-            
+
             $response = wp_remote_get($verify_url, array(
                 'timeout' => 15,
                 'headers' => array(
@@ -246,7 +263,7 @@ class nwwp_Admin {
                 if (200 === $status_code) {
                     $body = wp_remote_retrieve_body($response);
                     $data = json_decode($body, true);
-                    
+
                     // El endpoint admin retorna array de clientes
                     if (is_array($data) && isset($data[0]['plan'])) {
                         $detected_plan = sanitize_text_field($data[0]['plan']);
@@ -256,11 +273,11 @@ class nwwp_Admin {
                 }
             }
         }
-        
+
         // Si no se detectó plan con Owner Secret o no hay Owner Secret, usar endpoint público
         if (empty($detected_plan) || $detected_plan === 'basic') {
             $public_verify_url = add_query_arg('api_key', $api_key, trailingslashit($api_url) . 'api/verify');
-            
+
             $public_response = wp_remote_get($public_verify_url, array(
                 'timeout' => 15,
                 'sslverify' => true,
@@ -271,7 +288,7 @@ class nwwp_Admin {
                 if (200 === $public_status) {
                     $public_body = wp_remote_retrieve_body($public_response);
                     $public_data = json_decode($public_body, true);
-                    
+
                     if (isset($public_data['plan'])) {
                         $detected_plan = sanitize_text_field($public_data['plan']);
                     }
@@ -324,7 +341,8 @@ class nwwp_Admin {
         ));
     }
 
-    public function ajax_guardar_settings() {
+    public function ajax_guardar_settings()
+    {
         check_ajax_referer('nwwp_verify_connection_nonce', 'nwwp_settings_nonce');
 
         if (!current_user_can('manage_options')) {
@@ -385,7 +403,8 @@ class nwwp_Admin {
         wp_send_json_success(array('message' => 'Configuración guardada correctamente'));
     }
 
-    public function cargar_assets($hook) {
+    public function cargar_assets($hook)
+    {
         if (false === strpos($hook, 'newswire-wp') && false === strpos($hook, 'nwwp')) {
             return;
         }
@@ -408,7 +427,7 @@ class nwwp_Admin {
         );
 
         $detected_plan = get_option('nwwp_detected_plan', 'basic');
-        
+
         wp_localize_script('nwwp-admin-js', 'nwwpAdmin', array(
             'ajaxUrl' => admin_url('admin-ajax.php'),
             'nonce'   => wp_create_nonce('nwwp_verify_connection_nonce'),
@@ -416,14 +435,16 @@ class nwwp_Admin {
         ));
     }
 
-    public function agregar_enlace_ajustes($links) {
+    public function agregar_enlace_ajustes($links)
+    {
         $ajustes_link = '<a href="' . admin_url('admin.php?page=' . self::PAGE_SLUG) . '">'
-                      . __('Ajustes', 'newswire-wp') . '</a>';
+            . __('Ajustes', 'newswire-wp') . '</a>';
         array_unshift($links, $ajustes_link);
         return $links;
     }
 
-    public function es_modo_dueno() {
+    public function es_modo_dueno()
+    {
         $owner_secret = get_option('nwwp_owner_secret', '');
 
         if (empty($owner_secret)) {
@@ -449,7 +470,8 @@ class nwwp_Admin {
         return 200 === $status_code;
     }
 
-    public function ajax_crear_cliente() {
+    public function ajax_crear_cliente()
+    {
         check_ajax_referer('nwwp_verify_connection_nonce', 'nonce');
 
         if (!current_user_can('manage_options')) {
@@ -457,7 +479,7 @@ class nwwp_Admin {
         }
 
         $owner_secret = get_option('nwwp_owner_secret', '');
-        
+
         if (empty($owner_secret)) {
             wp_send_json_error(array('message' => __('Owner Secret no configurado.', 'newswire-wp')));
         }
