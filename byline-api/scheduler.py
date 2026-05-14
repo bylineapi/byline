@@ -139,11 +139,11 @@ async def scraping_job(force_date: Optional[datetime] = None, source_ids: Option
                         if score_final >= 80:
                             data["is_breaking"] = True
                             data["status"] = ArticleStatusEnum.pending_breaking
-                        elif score_final >= 40:
+                        elif score_final >= 20:
                             data["status"] = ArticleStatusEnum.pending_normal
                         else:
                             data["status"] = ArticleStatusEnum.discarded
-                            logger.info("❌ Artículo descartado (score bajo): %s (score: %.2f)", data.get("title", "")[:60], score_final)
+                            logger.info("❌ Artículo descartado (score muy bajo): %s (score: %.2f)", data.get("title", "")[:60], score_final)
 
                         # Guardar solo no descartados
                         if data["status"] != ArticleStatusEnum.discarded:

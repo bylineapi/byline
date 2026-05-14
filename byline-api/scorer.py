@@ -5,7 +5,7 @@ import re
 from datetime import datetime, timedelta
 from typing import Optional
 
-from keywords import URGENT_KEYWORDS
+from keywords import URGENT_KEYWORDS, GENERAL_KEYWORDS
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ class ImpactScorer:
 
     def _componente_keywords(self, article: dict) -> float:
         """
-        Busca palabras clave urgentes en el título (x2) y en el contenido (x1).
+        Busca palabras clave urgentes y generales en el título (x2) y en el contenido (x1).
         Retorna puntaje de 0 a 40.
         """
         title = (article.get("title") or "").lower()
@@ -63,8 +63,9 @@ class ImpactScorer:
         primeros_parrafos = " ".join(parrafos[:2])
 
         palabras_encontradas = 0
-        total_palabras = len(URGENT_KEYWORDS)
+        total_palabras = len(URGENT_KEYWORDS) + len(GENERAL_KEYWORDS)
 
+        # Buscar palabras urgentes
         for kw in URGENT_KEYWORDS:
             kw_lower = kw.lower()
             # Título pesa doble
@@ -72,6 +73,14 @@ class ImpactScorer:
                 palabras_encontradas += 2
             elif kw_lower in primeros_parrafos:
                 palabras_encontradas += 1
+
+        # Buscar palabras generales (pesan un poco menos)
+        for kw in GENERAL_KEYWORDS:
+            kw_lower = kw.lower()
+            if kw_lower in title:
+                palabras_encontradas += 1.5  # Título pesa 1.5x
+            elif kw_lower in primeros_parrafos:
+                palabras_encontradas += 0.8  # Contenido pesa 0.8x
 
         if total_palabras == 0:
             return 0.0

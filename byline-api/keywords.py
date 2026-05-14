@@ -1,17 +1,23 @@
-# keywords.py - Lista base de palabras clave urgentes para el scoring de impacto
+# keywords.py - Lista base de palabras clave para el scoring de impacto
 
+# Palabras de noticias urgentes/breaking
 URGENT_KEYWORDS = [
     "breaking",
     "urgente",
     "último momento",
     "ultimo momento",
     "muerto",
+    "muere",
+    "murió",
+    "falleció",
     "asesinado",
+    "homicidio",
     "terremoto",
     "tsunami",
     "ataque",
     "explosión",
     "explosion",
+    "bombardeo",
     "accidente",
     "alerta",
     "evacuación",
@@ -22,4 +28,103 @@ URGENT_KEYWORDS = [
     "derrumbe",
     "tiroteo",
     "secuestro",
+    "incendio",
+]
+
+# Palabras de noticias generales (para artículos regulares)
+GENERAL_KEYWORDS = [
+    # Política y gobierno
+    "presidente",
+    "gobierno",
+    "congreso",
+    "senado",
+    "diputado",
+    "ministro",
+    "elección",
+    "eleccion",
+    "votación",
+    "votacion",
+    "ley",
+    "decreto",
+    "reforma",
+    "política",
+    "politica",
+    "canciller",
+    "embajador",
+    
+    # Economía
+    "economía",
+    "economia",
+    "dólar",
+    "dolar",
+    "inflación",
+    "inflacion",
+    "mercado",
+    "bolsa",
+    "inversión",
+    "inversion",
+    "empleo",
+    "desempleo",
+    
+    # Salud
+    "salud",
+    "hospital",
+    "médico",
+    "medico",
+    "enfermedad",
+    "vacuna",
+    "tratamiento",
+    "diagnóstico",
+    "diagnostico",
+    "paciente",
+    
+    # Deportes
+    "fútbol",
+    "futbol",
+    "béisbol",
+    "beisbol",
+    "baloncesto",
+    "equipo",
+    "jugador",
+    "partido",
+    "campeonato",
+    "liga",
+    "victoria",
+    "derrota",
+    "gol",
+    
+    # Tecnología y ciencia
+    "tecnología",
+    "tecnologia",
+    "inteligencia artificial",
+    "ciencia",
+    "investigación",
+    "investigacion",
+    "descubrimiento",
+    "innovación",
+    "innovacion",
+    
+    # Sociedad y cultura
+    "educación",
+    "educacion",
+    "cultura",
+    "arte",
+    "música",
+    "musica",
+    "festival",
+    "exposición",
+    "exposicion",
+    "concierto",
+    
+    # Internacional
+    "internacional",
+    "mundial",
+    "global",
+    "guerra",
+    "conflicto",
+    "paz",
+    "acuerdo",
+    "tratado",
+    "sanción",
+    "sancion",
 ]
