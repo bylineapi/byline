@@ -69,7 +69,7 @@
         actualizarUIsegunPlan: function(plan) {
             var contentFull = document.querySelector('input[name="nwwp_content_mode"][value="full"]');
             var contentSummary = document.querySelector('input[name="nwwp_content_mode"][value="summary"]');
-            var breakingCheck = document.getElementById('nwwp_activar_breaking');
+            var breakingCheck = document.getElementById('nwwp_breaking_enabled');
             var postsPerHour = document.getElementById('nwwp_posts_per_hour');
 
             if (plan === 'basic') {
@@ -178,6 +178,137 @@
 
     document.addEventListener('DOMContentLoaded', function() {
         NWWPSettings.init();
+        
+        // --- Gestión de Fuentes (Modo Dueño) ---
+        var sourcesTbody = document.getElementById('nwwp-sources-tbody');
+        if (sourcesTbody) {
+            cargarFuentes();
+        }
+
+        function cargarFuentes() {
+            var formData = new FormData();
+            formData.append('action', 'nwwp_get_sources');
+            formData.append('nonce', nwwpAdmin.nonce);
+
+            fetch(nwwpAdmin.ajaxUrl, {
+                method: 'POST',
+                body: formData
+            })
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    renderizarFuentes(data.data);
+                } else {
+                    sourcesTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:red;">Error al cargar fuentes: ' + data.data.message + '</td></tr>';
+                }
+            })
+            .catch(function() {
+                sourcesTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:red;">Error de conexión.</td></tr>';
+            });
+        }
+
+        function renderizarFuentes(fuentes) {
+            if (!fuentes || fuentes.length === 0) {
+                sourcesTbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No hay fuentes configuradas.</td></tr>';
+                return;
+            }
+
+            var html = '';
+            fuentes.forEach(function(f) {
+                var urlDisplay = f.rss_url ? f.rss_url : f.url;
+                var typeBadge = f.rss_url ? '<span class="nwwp-badge-rss">RSS</span>' : '<span class="nwwp-badge-url">URL</span>';
+                
+                html += '<tr>' +
+                    '<td><strong>' + f.name + '</strong></td>' +
+                    '<td><code style="font-size:11px;">' + urlDisplay + '</code> ' + typeBadge + '</td>' +
+                    '<td>' + (f.category || '-') + '</td>' +
+                    '<td><span class="nwwp-status-' + (f.is_active ? 'active' : 'inactive') + '">' + (f.is_active ? 'Activa' : 'Inactiva') + '</span></td>' +
+                    '<td>' +
+                        '<button type="button" class="nwwp-btn-delete-source" data-id="' + f.id + '" style="color:#d32f2f;background:none;border:none;cursor:pointer;padding:0;font-size:12px;">Eliminar</button>' +
+                    '</td>' +
+                    '</tr>';
+            });
+            sourcesTbody.innerHTML = html;
+
+            // Bind delete buttons
+            document.querySelectorAll('.nwwp-btn-delete-source').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    if (confirm('¿Estás seguro de eliminar esta fuente? Se eliminarán también sus artículos asociados.')) {
+                        eliminarFuente(this.getAttribute('data-id'));
+                    }
+                });
+            });
+        }
+
+        function eliminarFuente(id) {
+            var formData = new FormData();
+            formData.append('action', 'nwwp_delete_source');
+            formData.append('nonce', nwwpAdmin.nonce);
+            formData.append('source_id', id);
+
+            fetch(nwwpAdmin.ajaxUrl, {
+                method: 'POST',
+                body: formData
+            })
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    cargarFuentes();
+                } else {
+                    alert('Error: ' + data.data.message);
+                }
+            });
+        }
+
+        var addSourceBtn = document.getElementById('nwwp-add-source-btn');
+        if (addSourceBtn) {
+            addSourceBtn.addEventListener('click', function() {
+                var name = document.getElementById('nwwp_new_source_name').value.trim();
+                var category = document.getElementById('nwwp_new_source_category').value.trim();
+                var url = document.getElementById('nwwp_new_source_url').value.trim();
+                var rss = document.getElementById('nwwp_new_source_rss').value.trim();
+                var msg = document.getElementById('nwwp-add-source-msg');
+
+                if (!name || !url) {
+                    msg.innerHTML = '<span style="color:red;">Nombre y URL son obligatorios.</span>';
+                    return;
+                }
+
+                addSourceBtn.disabled = true;
+                addSourceBtn.textContent = 'Agregando...';
+                msg.innerHTML = '';
+
+                var formData = new FormData();
+                formData.append('action', 'nwwp_add_source');
+                formData.append('nonce', nwwpAdmin.nonce);
+                formData.append('name', name);
+                formData.append('category', category);
+                formData.append('url', url);
+                formData.append('rss_url', rss);
+
+                fetch(nwwpAdmin.ajaxUrl, {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        msg.innerHTML = '<span style="color:green;">Fuente agregada!</span>';
+                        document.getElementById('nwwp_new_source_name').value = '';
+                        document.getElementById('nwwp_new_source_category').value = '';
+                        document.getElementById('nwwp_new_source_url').value = '';
+                        document.getElementById('nwwp_new_source_rss').value = '';
+                        cargarFuentes();
+                    } else {
+                        msg.innerHTML = '<span style="color:red;">Error: ' + data.data.message + '</span>';
+                    }
+                })
+                .finally(function() {
+                    addSourceBtn.disabled = false;
+                    addSourceBtn.textContent = 'Agregar Fuente';
+                });
+            });
+        }
     });
 
 })();

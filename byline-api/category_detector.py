@@ -29,39 +29,49 @@ CATEGORY_KEYWORDS = {
     "deportes": [
         "deportes", "sports", "futbol", "soccer", "basketball", "tennis",
         "olimpicos", "olympics", "liga", "league", "mundial", "world cup",
-        "atletismo", "ciclismo", "formula 1", "baseball", "beisbol"
+        "atletismo", "ciclismo", "formula 1", "baseball", "beisbol", "nba",
+        "campeonato", "partido", "match", "equipo", "team", "entrenador", "coach"
     ],
     "cultura": [
         "cultura", "culture", "arte", "art", "musica", "music", "cine",
         "cinema", "peliculas", "movies", "teatro", "theater", "literatura",
         "literature", "entretenimiento", "entertainment", "televisión",
-        "television", "series", "libros", "books"
+        "television", "series", "libros", "books", "concierto", "festival",
+        "estreno", "celebridad", "celebrity", "famosos", "espectaculos"
     ],
     "ciencia": [
         "ciencia", "science", "investigacion", "research", "descubrimiento",
         "discovery", "espacio", "space", "nasa", "medicina", "medicine",
-        "salud", "health", "biologia", "biology", "quimica", "chemistry",
-        "fisica", "physics", "medio ambiente", "environment"
+        "biologia", "biology", "quimica", "chemistry", "fisica", "physics",
+        "estudio cientifico", "vacuna", "genetica", "astronomia"
+    ],
+    "salud": [
+        "salud", "health", "bienestar", "wellness", "fitness", "nutricion",
+        "dieta", "enfermedad", "disease", "sintomas", "tratamiento", "hospital",
+        "medico", "doctor", "psicologia", "mental health", "virus", "bacteria",
+        "prevencion", "curiosidades medicas"
     ],
     "internacional": [
         "internacional", "international", "mundo", "world", "global",
         "exterior", "onu", "un", "europa", "europe", "asia", "africa",
-        "latinoamerica", "latin america", "diplomacia", "diplomacy"
+        "latinoamerica", "latin america", "diplomacia", "diplomacy", "guerra",
+        "war", "conflicto", "paz", "frontera"
     ],
     "sociedad": [
         "sociedad", "society", "social", "comunidad", "community",
         "educacion", "education", "familia", "family", "mujer", "women",
         "genero", "gender", "diversidad", "diversity", "religion",
-        "iglesia", "church"
+        "iglesia", "church", "derechos humanos", "human rights", "protesta"
     ],
     "seguridad": [
         "seguridad", "security", "crimen", "crime", "policia", "police",
         "violencia", "violence", "terrorismo", "terrorism", "justicia",
-        "justice", "ley", "law", "carcel", "prison", "accidente"
+        "justice", "ley", "law", "carcel", "prison", "accidente", "robo",
+        "asalto", "investigacion policial", "fiscalia"
     ],
     "opinion": [
         "opinion", "editorial", "columna", "column", "analisis", "analysis",
-        "comentario", "commentary", "blog", "tribuna", "plataforma"
+        "comentario", "commentary", "blog", "tribuna", "plataforma", "punto de vista"
     ],
 }
 
@@ -153,6 +163,41 @@ def detectar_categoria_desde_feed(rss_url: str) -> Optional[str]:
     except Exception as e:
         logger.error("Error detectando categoría para %s: %s", rss_url, e)
         return None
+
+
+def detectar_categoria_texto(titulo: str, contenido: str) -> Optional[str]:
+    """
+    Detecta la categoría de un artículo basándose en su título y contenido.
+    
+    Args:
+        titulo: Título del artículo
+        contenido: Contenido del artículo
+        
+    Returns:
+        Categoría detectada o None si no se pudo determinar
+    """
+    if not titulo and not contenido:
+        return None
+        
+    texto_completo = f"{titulo or ''} {contenido or ''}".lower()
+    
+    categorias_encontradas = {}
+    
+    for category, keywords in CATEGORY_KEYWORDS.items():
+        # Dar más peso a coincidencias en el título
+        score_titulo = sum(3 for kw in keywords if titulo and kw in titulo.lower())
+        # Menos peso a coincidencias en el cuerpo
+        score_cuerpo = sum(1 for kw in keywords if contenido and kw in contenido.lower())
+        
+        total_score = score_titulo + score_cuerpo
+        if total_score > 0:
+            categorias_encontradas[category] = total_score
+            
+    if not categorias_encontradas:
+        return None
+        
+    # Retornar la categoría con mayor puntuación
+    return max(categorias_encontradas, key=categorias_encontradas.get)
 
 
 def obtener_nombre_desde_feed(rss_url: str) -> Optional[str]:

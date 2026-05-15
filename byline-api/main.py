@@ -907,7 +907,7 @@ async def analyze_html_source(
             nueva_fuente = Source(
                 name=data.source_name,
                 url=data.source_url,
-                rss_url="",  # HTML-only source
+                rss_url=None,  # HTML-only source
                 category=data.category,
             )
             db.add(nueva_fuente)

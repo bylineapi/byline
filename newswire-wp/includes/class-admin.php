@@ -25,6 +25,9 @@ class nwwp_Admin
         add_action('wp_ajax_nwwp_verify_owner_secret', array($this, 'ajax_verificar_owner_secret'));
         add_action('wp_ajax_nwwp_save_settings_ajax', array($this, 'ajax_guardar_settings'));
         add_action('wp_ajax_nwwp_crear_cliente', array($this, 'ajax_crear_cliente'));
+        add_action('wp_ajax_nwwp_get_sources', array($this, 'ajax_obtener_fuentes'));
+        add_action('wp_ajax_nwwp_add_source', array($this, 'ajax_agregar_fuente'));
+        add_action('wp_ajax_nwwp_delete_source', array($this, 'ajax_eliminar_fuente'));
         add_action('admin_enqueue_scripts', array($this, 'cargar_assets'));
         add_filter('plugin_action_links_' . plugin_basename(nwwp_PLUGIN_DIR . 'newswire-wp.php'), array($this, 'agregar_enlace_ajustes'));
     }
@@ -70,7 +73,7 @@ class nwwp_Admin
             'sanitize_callback' => array($this, 'sanitize_posts_per_hour'),
         ));
 
-        register_setting('nwwp_settings_group', 'nwwp_activar_breaking', array(
+        register_setting('nwwp_settings_group', 'nwwp_breaking_enabled', array(
             'sanitize_callback' => 'rest_sanitize_boolean',
         ));
 
@@ -377,8 +380,9 @@ class nwwp_Admin
         if (isset($_POST['nwwp_posts_per_hour'])) {
             update_option('nwwp_posts_per_hour', absint($_POST['nwwp_posts_per_hour']), true);
         }
-        if (isset($_POST['nwwp_activar_breaking'])) {
-            update_option('nwwp_activar_breaking', (bool) $_POST['nwwp_activar_breaking'], true);
+        if (isset($_POST['nwwp_breaking_enabled'])) {
+            update_option('nwwp_breaking_enabled', (bool) $_POST['nwwp_breaking_enabled'], true);
+            error_log('NewsWire WP: Breaking enabled guardado');
         }
         if (isset($_POST['nwwp_default_image_id'])) {
             update_option('nwwp_default_image_id', absint($_POST['nwwp_default_image_id']), true);
@@ -587,5 +591,124 @@ class nwwp_Admin
             'message' => __('Cliente creado exitosamente.', 'newswire-wp'),
             'client' => $data,
         ));
+    }
+
+    public function ajax_obtener_fuentes()
+    {
+        check_ajax_referer('nwwp_verify_connection_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Sin permisos.'));
+        }
+
+        $owner_secret = get_option('nwwp_owner_secret', '');
+        if (empty($owner_secret)) {
+            wp_send_json_error(array('message' => 'Modo Dueño no activo.'));
+        }
+
+        $api_url = NWWP_API_URL;
+        $endpoint = trailingslashit($api_url) . 'admin/sources';
+
+        $response = wp_remote_get($endpoint, array(
+            'timeout' => 15,
+            'headers' => array(
+                'X-Admin-Secret' => $owner_secret,
+            ),
+        ));
+
+        if (is_wp_error($response)) {
+            wp_send_json_error(array('message' => $response->get_error_message()));
+        }
+
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+
+        wp_send_json_success($data);
+    }
+
+    public function ajax_agregar_fuente()
+    {
+        check_ajax_referer('nwwp_verify_connection_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Sin permisos.'));
+        }
+
+        $owner_secret = get_option('nwwp_owner_secret', '');
+        if (empty($owner_secret)) {
+            wp_send_json_error(array('message' => 'Modo Dueño no activo.'));
+        }
+
+        $name = sanitize_text_field($_POST['name']);
+        $url = esc_url_raw($_POST['url']);
+        $rss_url = isset($_POST['rss_url']) ? esc_url_raw($_POST['rss_url']) : '';
+        $category = sanitize_text_field($_POST['category']);
+
+        if (empty($name) || empty($url)) {
+            wp_send_json_error(array('message' => 'Nombre y URL son obligatorios.'));
+        }
+
+        $api_url = NWWP_API_URL;
+        $endpoint = trailingslashit($api_url) . 'admin/sources';
+
+        $response = wp_remote_post($endpoint, array(
+            'timeout' => 30,
+            'headers' => array(
+                'X-Admin-Secret' => $owner_secret,
+                'Content-Type' => 'application/json',
+            ),
+            'body' => wp_json_encode(array(
+                'name' => $name,
+                'url' => $url,
+                'rss_url' => !empty($rss_url) ? $rss_url : null,
+                'category' => $category,
+            )),
+        ));
+
+        if (is_wp_error($response)) {
+            wp_send_json_error(array('message' => $response->get_error_message()));
+        }
+
+        $status_code = wp_remote_retrieve_response_code($response);
+        if ($status_code >= 400) {
+            $body = wp_remote_retrieve_body($response);
+            $data = json_decode($body, true);
+            wp_send_json_error(array('message' => isset($data['detail']) ? $data['detail'] : 'Error en la API'));
+        }
+
+        wp_send_json_success(array('message' => 'Fuente agregada correctamente.'));
+    }
+
+    public function ajax_eliminar_fuente()
+    {
+        check_ajax_referer('nwwp_verify_connection_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Sin permisos.'));
+        }
+
+        $owner_secret = get_option('nwwp_owner_secret', '');
+        $source_id = absint($_POST['source_id']);
+
+        if (empty($owner_secret) || !$source_id) {
+            wp_send_json_error(array('message' => 'Datos inválidos.'));
+        }
+
+        $api_url = NWWP_API_URL;
+        $endpoint = trailingslashit($api_url) . 'admin/sources/' . $source_id;
+
+        $response = wp_remote_request($endpoint, array(
+            'method' => 'DELETE',
+            'timeout' => 15,
+            'headers' => array(
+                'X-Admin-Secret' => $owner_secret,
+            ),
+        ));
+
+        if (is_wp_error($response)) {
+            wp_send_json_error(array('message' => $response->get_error_message()));
+        }
+
+        wp_send_json_success(array('message' => 'Fuente eliminada.'));
     }
 }

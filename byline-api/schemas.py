@@ -59,7 +59,7 @@ class SourceBasic(BaseModel):
 class SourceCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     url: Optional[str] = None
-    rss_url: str = Field(..., max_length=500)
+    rss_url: Optional[str] = Field(None, max_length=500)
     category: Optional[str] = None
     favicon_url: Optional[str] = None
 
@@ -68,7 +68,7 @@ class SourceOut(BaseModel):
     id: int
     name: str
     url: Optional[str]
-    rss_url: str
+    rss_url: Optional[str]
     category: Optional[str]
     favicon_url: Optional[str]
     is_active: bool

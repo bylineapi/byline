@@ -713,6 +713,69 @@ if ($woocommerce_active && $is_owner_mode) {
             </div>
         <?php endif; ?>
 
+        <?php if ($is_owner_mode): ?>
+            <div class="nwwp-section" id="nwwp-sources-section">
+                <div class="nwwp-section-header">
+                    <div class="nwwp-section-icon blue">🌐</div>
+                    <div class="nwwp-section-title">
+                        <h2>Gestión de Fuentes</h2>
+                        <p>Administra las fuentes de scraping (RSS o URL directa)</p>
+                    </div>
+                </div>
+                <div class="nwwp-section-content">
+                    <div class="nwwp-sources-list-container">
+                        <table class="nwwp-sources-table" id="nwwp-sources-table">
+                            <thead>
+                                <tr>
+                                    <th>Nombre</th>
+                                    <th>URL / RSS</th>
+                                    <th>Categoría</th>
+                                    <th>Estado</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="nwwp-sources-tbody">
+                                <tr>
+                                    <td colspan="5" style="text-align:center;">Cargando fuentes...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="nwwp-add-source-form" style="margin-top: 30px; padding: 20px; background: #f0f6fb; border-radius: 8px; border: 1px solid #c3d9e8;">
+                        <h3 style="margin-top:0;">Agregar nueva fuente</h3>
+                        <p class="description" style="margin-bottom:15px;">Puedes agregar una <strong>URL directa</strong> (ej: <code>listindiario.com</code>) y el sistema aprenderá los selectores automáticamente, o una <strong>URL de RSS</strong>.</p>
+                        
+                        <div class="nwwp-form-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                            <div class="nwwp-field">
+                                <label for="nwwp_new_source_name">Nombre de la fuente</label>
+                                <input type="text" id="nwwp_new_source_name" placeholder="Ej: Listín Diario" style="width:100%;" />
+                            </div>
+                            <div class="nwwp-field">
+                                <label for="nwwp_new_source_category">Categoría base</label>
+                                <input type="text" id="nwwp_new_source_category" placeholder="Ej: nacional, deportes" style="width:100%;" />
+                            </div>
+                            <div class="nwwp-field" style="grid-column: span 2;">
+                                <label for="nwwp_new_source_url">URL del Sitio (Home o Sección)</label>
+                                <input type="url" id="nwwp_new_source_url" placeholder="https://www.ejemplo.com" style="width:100%;" />
+                            </div>
+                            <div class="nwwp-field" style="grid-column: span 2;">
+                                <label for="nwwp_new_source_rss">URL de RSS (Opcional)</label>
+                                <input type="url" id="nwwp_new_source_rss" placeholder="https://www.ejemplo.com/rss.xml" style="width:100%;" />
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top:20px;">
+                            <button type="button" id="nwwp-add-source-btn" class="button button-primary" style="height: 40px; padding: 0 25px;">
+                                Agregar Fuente
+                            </button>
+                            <span id="nwwp-add-source-msg" class="nwwp-verify-msg" style="margin-left:15px;"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        <?php endif; ?>
+
         <!-- Footer -->
         <div class="nwwp-footer">
             <div class="nwwp-footer-left">
@@ -762,12 +825,44 @@ if ($woocommerce_active && $is_owner_mode) {
 
                 formData.append('nwwp_posts_per_hour', document.getElementById('nwwp_posts_per_hour').value);
 
-                var breakingCheckbox = document.getElementById('nwwp_activar_breaking');
-                formData.append('nwwp_activar_breaking', breakingCheckbox && breakingCheckbox.checked ? 1 : 0);
+                var breakingCheckbox = document.getElementById('nwwp_breaking_enabled');
+                formData.append('nwwp_breaking_enabled', breakingCheckbox && breakingCheckbox.checked ? 1 : 0);
+
+                var autoPublishCheckbox = document.getElementById('nwwp_auto_publish_enabled');
+                formData.append('nwwp_auto_publish_enabled', autoPublishCheckbox && autoPublishCheckbox.checked ? 1 : 0);
+
+                var autoPublishFreq = document.getElementById('nwwp_auto_publish_frequency');
+                if (autoPublishFreq) {
+                    formData.append('nwwp_auto_publish_frequency', autoPublishFreq.value);
+                }
+
+                var autoPublishCat = document.getElementById('nwwp_auto_publish_category');
+                if (autoPublishCat) {
+                    formData.append('nwwp_auto_publish_category', autoPublishCat.value);
+                }
 
                 formData.append('nwwp_default_image_id', document.getElementById('nwwp_default_image_id').value);
                 formData.append('nwwp_category_map', JSON.stringify(mapData));
                 formData.append('nwwp_extra_keywords', document.getElementById('nwwp_extra_keywords').value);
+
+                // Modo dueño
+                var ownerSecret = document.getElementById('nwwp_owner_secret');
+                if (ownerSecret) {
+                    formData.append('nwwp_owner_secret', ownerSecret.value);
+                }
+
+                var productMap = {};
+                var basicProd = document.getElementById('nwwp_product_basic');
+                var proProd = document.getElementById('nwwp_product_pro');
+                var businessProd = document.getElementById('nwwp_product_business');
+                
+                if (basicProd) productMap['basic'] = basicProd.value;
+                if (proProd) productMap['pro'] = proProd.value;
+                if (businessProd) productMap['business'] = businessProd.value;
+                
+                for (var key in productMap) {
+                    formData.append('nwwp_product_map[' + key + ']', productMap[key]);
+                }
 
                 var saveBtn = document.getElementById('nwwp-save-btn');
                 var saveMessage = document.getElementById('nwwp-save-message');
@@ -890,6 +985,19 @@ if ($woocommerce_active && $is_owner_mode) {
                 e.preventDefault();
                 if (defaultImageIdInput) defaultImageIdInput.value = '';
                 if (imagePreview) imagePreview.innerHTML = '';
+            });
+        }
+
+        // Toggle filas de auto-publicación
+        var autoPublishToggle = document.getElementById('nwwp_auto_publish_enabled');
+        var freqRow = document.getElementById('nwwp-auto-publish-frequency-row');
+        var catRow = document.getElementById('nwwp-auto-publish-category-row');
+
+        if (autoPublishToggle && freqRow && catRow) {
+            autoPublishToggle.addEventListener('change', function() {
+                var display = this.checked ? 'block' : 'none';
+                freqRow.style.display = display;
+                catRow.style.display = display;
             });
         }
     })();

@@ -101,7 +101,44 @@ async def scraping_job(force_date: Optional[datetime] = None, source_ids: Option
             # La sesión se cierra aquí
             
             # Scraping de la fuente (puede tardar varios minutos)
-            articulos_crudos = await fetch_rss(fuente, profile_dict, force_date)
+            articulos_crudos, nuevo_perfil = await fetch_rss(fuente, profile_dict, force_date)
+            
+            # Guardar el nuevo perfil si se aprendió automáticamente
+            if nuevo_perfil:
+                async with get_session_maker() as db_prof:
+                    try:
+                        # Buscar perfil existente
+                        stmt = select(SourceProfile).where(SourceProfile.source_id == fuente.id)
+                        res = await db_prof.execute(stmt)
+                        profile_obj = res.scalar_one_or_none()
+                        
+                        if profile_obj:
+                            # Actualizar perfil existente
+                            profile_obj.title_selector = nuevo_perfil['title_selector']
+                            profile_obj.body_selector = nuevo_perfil['body_selector']
+                            profile_obj.image_selector = nuevo_perfil['image_selector']
+                            profile_obj.date_selector = nuevo_perfil['date_selector']
+                            profile_obj.author_selector = nuevo_perfil['author_selector']
+                            profile_obj.confidence_score = nuevo_perfil['confidence_score']
+                            profile_obj.last_verified = datetime.utcnow()
+                        else:
+                            # Crear nuevo perfil
+                            new_profile = SourceProfile(
+                                source_id=fuente.id,
+                                title_selector=nuevo_perfil['title_selector'],
+                                body_selector=nuevo_perfil['body_selector'],
+                                image_selector=nuevo_perfil['image_selector'],
+                                date_selector=nuevo_perfil['date_selector'],
+                                author_selector=nuevo_perfil['author_selector'],
+                                confidence_score=nuevo_perfil['confidence_score'],
+                                last_verified=datetime.utcnow()
+                            )
+                            db_prof.add(new_profile)
+                        
+                        await db_prof.commit()
+                        logger.info("🤖 Perfil guardado automáticamente para fuente %s", fuente.name)
+                    except Exception as prof_err:
+                        logger.error("Error guardando perfil automático: %s", prof_err)
             
             if not articulos_crudos:
                 logger.info("Fuente %s: No se extrajeron artículos", fuente.name)
@@ -354,8 +391,27 @@ async def execute_scraping(client_id: Optional[int] = None, max_sources: int = 1
                         "confidence_score": profile.confidence_score,
                     }
             
-            # Hacer scraping de la fuente
-            articles_data = await fetch_rss(fuente.rss_url, limit=limit)
+            # Hacer scraping de la fuente con auto-profiling
+            articles_data, nuevo_perfil = await fetch_rss(fuente, profile_dict, limit=limit)
+            
+            # Guardar el nuevo perfil si se aprendió automáticamente
+            if nuevo_perfil:
+                async with get_session_maker() as db_prof:
+                    try:
+                        stmt = select(SourceProfile).where(SourceProfile.source_id == fuente.id)
+                        res = await db_prof.execute(stmt)
+                        profile_obj = res.scalar_one_or_none()
+                        if not profile_obj:
+                            new_profile = SourceProfile(
+                                source_id=fuente.id,
+                                **nuevo_perfil,
+                                last_verified=datetime.utcnow()
+                            )
+                            db_prof.add(new_profile)
+                            await db_prof.commit()
+                            logger.info("🤖 Perfil aprendido guardado para %s", fuente.name)
+                    except Exception:
+                        pass
             
             if not articles_data:
                 continue

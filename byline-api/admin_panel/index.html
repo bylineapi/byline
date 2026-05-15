@@ -610,7 +610,7 @@
                 </h2>
                 <div style="display: flex; gap: 8px; margin-bottom: 16px;">
                     <button class="btn btn-primary active" onclick="showSourceTab('rss')">Con RSS</button>
-                    <button class="btn btn-secondary" onclick="showSourceTab('html')">Con HTML</button>
+                    <button class="btn btn-secondary" onclick="showSourceTab('url')">🔗 URL Directa (Auto-Bot)</button>
                 </div>
 
                 <!-- RSS -->
@@ -655,27 +655,33 @@ https://rss.bbc.com/news/world/latam/rss.xml
                     <div id="rss-result"></div>
                 </div>
 
-                <!-- HTML -->
-                <div id="source-html" style="display: none;">
+                <!-- URL Directa (Auto-Bot) -->
+                <div id="source-url" style="display: none;">
+                    <div style="background: #fdf2f8; border: 1px solid #fbcfe8; border-radius: 6px; padding: 16px; margin-bottom: 20px;">
+                        <h3 style="font-size: 16px; margin-bottom: 12px; color: #9d174d;">🤖 Modo Autónomo (Smart Discovery)</h3>
+                        <p style="font-size: 13px; color: #475569; margin-bottom: 12px;">
+                            Ingresa la URL principal de un sitio (ej: <code>listindiario.com</code>). 
+                            El sistema navegará por el sitio, <strong>descubrirá artículos automáticamente</strong> y aprenderá los selectores CSS sin intervención manual.
+                        </p>
+                    </div>
+
                     <div class="form-group">
                         <label>Nombre de la fuente</label>
-                        <input type="text" id="html_source_name" placeholder="ej: BBC News">
+                        <input type="text" id="url_source_name" placeholder="ej: Listín Diario">
                     </div>
                     <div class="form-group">
-                        <label>URL principal</label>
-                        <input type="url" id="html_source_url" placeholder="https://www.bbc.com">
+                        <label>URL principal (Home o Sección)</label>
+                        <input type="url" id="url_source_url" placeholder="https://listindiario.com">
                     </div>
                     <div class="form-group">
-                        <label>Categoría (opcional)</label>
-                        <input type="text" id="html_category">
+                        <label>Categoría Base (opcional)</label>
+                        <input type="text" id="url_category" placeholder="ej: nacional">
                     </div>
-                    <div class="form-group">
-                        <label>Código HTML del artículo</label>
-                        <textarea id="html_code" rows="6" placeholder="Pega el código HTML de un artículo..."></textarea>
-                    </div>
-                    <button class="btn btn-primary" id="btn-analyze-html">Analizar y guardar</button>
-                    <div id="html-loading" class="loading">Analizando...</div>
-                    <div id="html-result"></div>
+                    <button class="btn btn-primary" id="btn-add-url-direct" style="background: #9d174d;">
+                        🚀 Agregar Fuente Autónoma
+                    </button>
+                    <div id="url-loading" class="loading">Iniciando motor autónomo...</div>
+                    <div id="url-result"></div>
                 </div>
             </div>
 
@@ -743,6 +749,13 @@ https://rss.bbc.com/news/world/latam/rss.xml
                         <tr><td colspan="9" style="text-align: center;">Cargando...</td></tr>
                     </tbody>
                 </table>
+
+                <!-- Paginación Artículos -->
+                <div style="display: flex; justify-content: center; align-items: center; gap: 20px; margin-top: 24px;">
+                    <button class="btn btn-secondary btn-sm" id="btn-articles-prev">⬅️ Anterior</button>
+                    <span id="articles-page-info" style="font-size: 14px; font-weight: 600; color: #475569;">Página 1</span>
+                    <button class="btn btn-secondary btn-sm" id="btn-articles-next">Siguiente ➡️</button>
+                </div>
             </div>
         </div>
 
@@ -768,6 +781,13 @@ https://rss.bbc.com/news/world/latam/rss.xml
                         <tr><td colspan="4" style="text-align: center;">Cargando...</td></tr>
                     </tbody>
                 </table>
+
+                <!-- Paginación Logs -->
+                <div style="display: flex; justify-content: center; align-items: center; gap: 20px; margin-top: 24px;">
+                    <button class="btn btn-secondary btn-sm" id="btn-logs-prev">⬅️ Anterior</button>
+                    <span id="logs-page-info" style="font-size: 14px; font-weight: 600; color: #475569;">Página 1</span>
+                    <button class="btn btn-secondary btn-sm" id="btn-logs-next">Siguiente ➡️</button>
+                </div>
             </div>
         </div>
 
@@ -782,6 +802,11 @@ https://rss.bbc.com/news/world/latam/rss.xml
         // ============================================
         const API_BASE = 'https://byline-dgpt.onrender.com';
         let currentSecret = '';
+        
+        // Paginación
+        let articlesPage = 0;
+        let logsPage = 0;
+        const LIMIT = 50;
 
         // ============================================
         // FUNCIONES DE AUTENTICACIÓN
@@ -1260,7 +1285,12 @@ https://rss.bbc.com/news/world/latam/rss.xml
         
         function showSourceTab(tab) {
             document.getElementById('source-rss').style.display = tab === 'rss' ? 'block' : 'none';
-            document.getElementById('source-html').style.display = tab === 'html' ? 'block' : 'none';
+            document.getElementById('source-url').style.display = tab === 'url' ? 'block' : 'none';
+            
+            // Actualizar botones de tab
+            const buttons = document.querySelectorAll('#panel-sources .btn');
+            buttons[0].className = tab === 'rss' ? 'btn btn-primary active' : 'btn btn-secondary';
+            buttons[1].className = tab === 'url' ? 'btn btn-primary active' : 'btn btn-secondary';
         }
 
         // Agregar múltiples fuentes RSS
@@ -1388,35 +1418,53 @@ https://rss.bbc.com/news/world/latam/rss.xml
             }
         });
 
-        // Analizar HTML
-        document.getElementById('btn-analyze-html').addEventListener('click', async function() {
-            const sourceName = document.getElementById('html_source_name').value.trim();
-            const sourceUrl = document.getElementById('html_source_url').value.trim();
-            const category = document.getElementById('html_category').value.trim();
-            const htmlCode = document.getElementById('html_code').value.trim();
+        // Agregar URL Directa (Modo Autónomo)
+        document.getElementById('btn-add-url-direct').addEventListener('click', async function() {
+            const sourceName = document.getElementById('url_source_name').value.trim();
+            const sourceUrl = document.getElementById('url_source_url').value.trim();
+            const category = document.getElementById('url_category').value.trim();
             
-            if (!sourceName || !sourceUrl || htmlCode.length < 100) {
-                document.getElementById('html-result').innerHTML = '<div class="alert alert-error">Completa todos los campos</div>';
+            if (!sourceName || !sourceUrl) {
+                document.getElementById('url-result').innerHTML = '<div class="alert alert-error">Nombre y URL son obligatorios</div>';
                 return;
             }
             
-            document.getElementById('html-loading').classList.add('visible');
+            document.getElementById('url-loading').classList.add('visible');
+            const btn = this;
+            btn.disabled = true;
             
             try {
-                const res = await fetch(API_BASE + '/admin/sources/analyze-html', {
+                const res = await fetch(API_BASE + '/admin/sources', {
                     method: 'POST',
                     headers: headers(),
-                    body: JSON.stringify({ html: htmlCode, source_url: sourceUrl, source_name: sourceName, category: category || null })
+                    body: JSON.stringify({ 
+                        name: sourceName, 
+                        url: sourceUrl, 
+                        rss_url: null, 
+                        category: category || null 
+                    })
                 });
+                
                 if (!res.ok) throw new Error((await res.json()).detail || 'Error');
                 
-                const data = await res.json();
-                document.getElementById('html-result').innerHTML = '<div class="alert alert-success">Fuente creada con confianza: ' + (data.confidence_score * 100).toFixed(0) + '%</div>';
+                document.getElementById('url-result').innerHTML = `
+                    <div class="alert alert-success">
+                        <strong>✅ Fuente añadida correctamente.</strong><br>
+                        El sistema empezará a descubrir artículos y aprender perfiles en el próximo ciclo de scraping.
+                    </div>
+                `;
+                
+                // Limpiar campos
+                document.getElementById('url_source_name').value = '';
+                document.getElementById('url_source_url').value = '';
+                document.getElementById('url_category').value = '';
+                
                 loadSources();
             } catch (e) {
-                document.getElementById('html-result').innerHTML = '<div class="alert alert-error">' + e.message + '</div>';
+                document.getElementById('url-result').innerHTML = '<div class="alert alert-error">' + e.message + '</div>';
             } finally {
-                document.getElementById('html-loading').classList.remove('visible');
+                document.getElementById('url-loading').classList.remove('visible');
+                btn.disabled = false;
             }
         });
 
@@ -1647,14 +1695,19 @@ Esta acción no se puede deshacer.`;
         
         async function loadArticles() {
             const tbody = document.getElementById('articles-table-body');
-            const category = document.getElementById('filter-category').value;
             const breaking = document.getElementById('filter-breaking').value;
             const status = document.getElementById('filter-status').value;
             
-            let url = API_BASE + '/admin/articles?limit=100';
+            let offset = articlesPage * LIMIT;
+            let url = `${API_BASE}/admin/articles?limit=${LIMIT}&offset=${offset}`;
+            
             if (category) url += '&category=' + encodeURIComponent(category);
             if (breaking) url += '&is_breaking=' + breaking;
             if (status) url += '&status=' + status;
+
+            // Actualizar info de página
+            document.getElementById('articles-page-info').textContent = `Página ${articlesPage + 1}`;
+            document.getElementById('btn-articles-prev').disabled = articlesPage === 0;
             
             try {
                 const res = await fetch(url, { headers: headers() });
@@ -1662,9 +1715,15 @@ Esta acción no se puede deshacer.`;
                 const articles = await res.json();
                 
                 if (!articles.length) {
-                    tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 40px;">No hay artículos aún. Ejecuta el scraping para extraer noticias.</td></tr>';
+                    tbody.innerHTML = articlesPage === 0 
+                        ? '<tr><td colspan="9" style="text-align: center; padding: 40px;">No hay artículos aún. Ejecuta el scraping para extraer noticias.</td></tr>'
+                        : '<tr><td colspan="9" style="text-align: center; padding: 40px;">No hay más artículos en esta página.</td></tr>';
+                    
+                    document.getElementById('btn-articles-next').disabled = true;
                     return;
                 }
+                
+                document.getElementById('btn-articles-next').disabled = articles.length < LIMIT;
                 
                 // Mostrar contador de artículos
                 const countElement = document.getElementById('articles-count');
@@ -1702,14 +1761,27 @@ Esta acción no se puede deshacer.`;
         async function loadLogs() {
             const tbody = document.getElementById('logs-table-body');
             try {
-                const res = await fetch(API_BASE + '/admin/logs?limit=100', { headers: headers() });
+                let offset = logsPage * LIMIT;
+                let url = `${API_BASE}/admin/logs?limit=${LIMIT}&offset=${offset}`;
+                
+                // Actualizar info de página
+                document.getElementById('logs-page-info').textContent = `Página ${logsPage + 1}`;
+                document.getElementById('btn-logs-prev').disabled = logsPage === 0;
+
+                const res = await fetch(url, { headers: headers() });
                 if (!res.ok) throw new Error();
                 const logs = await res.json();
                 
                 if (!logs.length) {
-                    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">No hay logs</td></tr>';
+                    tbody.innerHTML = logsPage === 0
+                        ? '<tr><td colspan="4" style="text-align: center;">No hay logs</td></tr>'
+                        : '<tr><td colspan="4" style="text-align: center;">No hay más logs en esta página.</td></tr>';
+                    
+                    document.getElementById('btn-logs-next').disabled = true;
                     return;
                 }
+
+                document.getElementById('btn-logs-next').disabled = logs.length < LIMIT;
                 
                 tbody.innerHTML = logs.map(log => `
                     <tr>
@@ -1742,6 +1814,35 @@ Esta acción no se puede deshacer.`;
                 document.getElementById('btn-auth').click();
             }
         });
+
+        // Eventos de Paginación Artículos
+        document.getElementById('btn-articles-prev').addEventListener('click', () => {
+            if (articlesPage > 0) {
+                articlesPage--;
+                loadArticles();
+            }
+        });
+        document.getElementById('btn-articles-next').addEventListener('click', () => {
+            articlesPage++;
+            loadArticles();
+        });
+
+        // Eventos de Paginación Logs
+        document.getElementById('btn-logs-prev').addEventListener('click', () => {
+            if (logsPage > 0) {
+                logsPage--;
+                loadLogs();
+            }
+        });
+        document.getElementById('btn-logs-next').addEventListener('click', () => {
+            logsPage++;
+            loadLogs();
+        });
+
+        // Resetear página al filtrar
+        document.getElementById('filter-category').addEventListener('change', () => { articlesPage = 0; });
+        document.getElementById('filter-breaking').addEventListener('change', () => { articlesPage = 0; });
+        document.getElementById('filter-status').addEventListener('change', () => { articlesPage = 0; });
 
         // Verificar si hay sesión guardada al cargar
         checkSavedSecret();

@@ -49,7 +49,7 @@ class Source(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(255), nullable=False)
     url = Column(String(500), nullable=True)
-    rss_url = Column(String(500), nullable=False, unique=True)
+    rss_url = Column(String(500), nullable=True, unique=True)
     category = Column(String(100), nullable=True)
     favicon_url = Column(String(500), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)

@@ -799,12 +799,77 @@
 
     .nwwp-form-label {
         width: 100%;
+        margin-bottom: 8px;
     }
 
     .nwwp-form-input {
+        width: 100%;
         max-width: 100%;
     }
+}
 
+/* ─── Fuentes Table Styles ─── */
+.nwwp-sources-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+    background: #fff;
+    border: 1px solid #dcdcde;
+    border-radius: 4px;
+}
+
+.nwwp-sources-table th, .nwwp-sources-table td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid #f0f0f1;
+}
+
+.nwwp-sources-table th {
+    background: #f8f9fa;
+    font-weight: 600;
+    font-size: 13px;
+    color: #1d2327;
+}
+
+.nwwp-status-active {
+    color: #2e7d32;
+    background: #e8f5e9;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.nwwp-status-inactive {
+    color: #c62828;
+    background: #ffebee;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.nwwp-badge-rss {
+    color: #1565c0;
+    background: #e3f2fd;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    margin-left: 5px;
+}
+
+.nwwp-badge-url {
+    color: #6a1b9a;
+    background: #f3e5f5;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    margin-left: 5px;
+}
+
+@media (max-width: 768px) {
     .nwwp-radio-cards {
         flex-direction: column;
     }
