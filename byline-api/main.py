@@ -85,7 +85,7 @@ async def lifespan(app: FastAPI):
 RATE_LIMIT_WINDOW_SECONDS = 60
 LIMITS = {
     "public": 100,  # 100 peticiones por minuto por IP para endpoints públicos/clientes
-    "admin": 10,    # 10 peticiones por minuto por IP para endpoints administrativos (anti brute-force)
+    "admin": 60,    # Aumentado a 60/min para permitir navegación rápida del admin sin bloqueos
 }
 
 # Historial de peticiones en memoria: {ip: {type: [timestamps]}}
@@ -122,6 +122,10 @@ from fastapi import Request
 
 @app.middleware("http")
 async def security_and_rate_limiting_middleware(request: Request, call_next):
+    # 0. Bypasear preflight de CORS OPTIONS inmediatamente
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
     # 1. Obtener IP real del cliente (soportando proxies como Render/Cloudflare)
     ip = request.client.host if request.client else "unknown"
     forwarded_for = request.headers.get("x-forwarded-for")
@@ -138,10 +142,18 @@ async def security_and_rate_limiting_middleware(request: Request, call_next):
     # 2. Control de Tasa (Rate Limiting) - Ignorar localhost
     if ip != "127.0.0.1" and not check_rate_limit(ip, endpoint_type):
         logger.warning(f"🚫 [Security Bunker] Rate Limit excedido para la IP {ip} en {path}")
-        return JSONResponse(
+        response = JSONResponse(
             status_code=429,
             content={"detail": "Too many requests. Please wait a minute before retrying."}
         )
+        # Inyectar cabeceras CORS en respuestas directas para evitar bloqueos del navegador
+        origin = request.headers.get("origin")
+        if origin:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+        else:
+            response.headers["Access-Control-Allow-Origin"] = "*"
+        return response
 
     # 3. Ejecutar Petición
     response = await call_next(request)
