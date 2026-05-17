@@ -87,6 +87,9 @@ class nwwp_Importer {
             return $post_id;
         }
 
+        // ─── Enlazado Interno y Etiquetado SEO Semántico Inteligente ─────
+        $this->enlazar_internamente_y_etiquetar($post_id, $contenido, $titulo);
+
         // ─── Imagen destacada ────────────────────────────────────────────
         $this->set_imagen_destacada($post_id, $article);
 
@@ -191,15 +194,28 @@ class nwwp_Importer {
 
     private function set_imagen_destacada($post_id, $article) {
         $attachment_id = 0;
+        $image_mode = get_option('nwwp_image_mode', 'original');
 
-        if (!empty($article['image_url'])) {
+        $image_to_load = '';
+        $original_url = !empty($article['image_url']) ? $article['image_url'] : '';
+        $premium_url  = !empty($article['premium_image_url']) ? $article['premium_image_url'] : '';
+
+        if ($image_mode === 'premium') {
+            $image_to_load = !empty($premium_url) ? $premium_url : $original_url;
+        } elseif ($image_mode === 'mixed') {
+            $image_to_load = !empty($original_url) ? $original_url : $premium_url;
+        } else {
+            $image_to_load = $original_url;
+        }
+
+        if (!empty($image_to_load)) {
             if (!function_exists('media_sideload_image')) {
                 require_once ABSPATH . 'wp-admin/includes/media.php';
                 require_once ABSPATH . 'wp-admin/includes/file.php';
                 require_once ABSPATH . 'wp-admin/includes/image.php';
             }
 
-            $attachment_id = media_sideload_image(esc_url($article['image_url']), $post_id, null, 'id');
+            $attachment_id = media_sideload_image(esc_url($image_to_load), $post_id, null, 'id');
             if (is_wp_error($attachment_id)) $attachment_id = 0;
         }
 
@@ -228,6 +244,89 @@ class nwwp_Importer {
                 ),
                 array('%s', '%d', '%s', '%s')
             );
+        }
+    }
+
+    private function enlazar_internamente_y_etiquetar($post_id, $contenido, $titulo) {
+        // ─── 1. Etiquetado Automático Inteligente ──────────────────────
+        $palabras = explode(' ', strtolower($titulo));
+        $stopwords = array(
+            'de', 'la', 'que', 'el', 'en', 'y', 'a', 'los', 'del', 'se', 'las', 'por', 'un', 'para',
+            'con', 'no', 'una', 'su', 'al', 'lo', 'como', 'más', 'pero', 'sus', 'le', 'ya', 'o', 'este',
+            'sí', 'porque', 'esta', 'entre', 'cuando', 'muy', 'sin', 'sobre', 'también', 'me', 'hasta',
+            'desde', 'nos', 'durante', 'uno', 'ni', 'contra', 'tres', 'sus', 'les', 'e', 'hacia', 'haber'
+        );
+        $tags = array();
+        foreach ($palabras as $p) {
+            $p_limpia = trim(preg_replace('/[^a-z0-9áéíóúñü]/i', '', $p));
+            if (strlen($p_limpia) > 4 && !in_array($p_limpia, $stopwords)) {
+                $tags[] = $p_limpia;
+            }
+        }
+        if (!empty($tags)) {
+            wp_set_post_tags($post_id, array_slice($tags, 0, 5), true);
+        }
+
+        // ─── 2. Enlazado Interno Semántico Automático (SEO) ─────────────
+        $existing_posts = get_posts(array(
+            'post_type'      => 'post',
+            'post_status'    => 'publish',
+            'posts_per_page' => 15,
+            'exclude'        => array($post_id),
+            'orderby'        => 'date',
+            'order'          => 'DESC',
+        ));
+
+        if (!empty($existing_posts)) {
+            $nuevo_contenido = $contenido;
+            $modificado = false;
+
+            foreach ($existing_posts as $ex_post) {
+                $ex_titulo = $ex_post->post_title;
+                // Extraer palabra clave principal (las primeras dos palabras significativas del título)
+                $ex_words = explode(' ', $ex_titulo);
+                $kw_candidate = '';
+                $count = 0;
+                foreach ($ex_words as $w) {
+                    $w_clean = trim(preg_replace('/[^a-z0-9áéíóúñü]/i', '', strtolower($w)));
+                    if (strlen($w_clean) > 4 && !in_array($w_clean, $stopwords)) {
+                        $kw_candidate .= ($kw_candidate ? ' ' : '') . $w;
+                        $count++;
+                        if ($count >= 2) break;
+                    }
+                }
+
+                if (empty($kw_candidate)) {
+                    // Fallback a la primera palabra larga del título
+                    foreach ($ex_words as $w) {
+                        if (strlen($w) > 5) {
+                            $kw_candidate = $w;
+                            break;
+                        }
+                    }
+                }
+
+                if (!empty($kw_candidate)) {
+                    // Reemplazar la primera ocurrencia de la palabra clave con el link si no está ya enlazada
+                    $kw_escaped = preg_quote($kw_candidate, '/');
+                    // Regex para buscar la palabra clave fuera de etiquetas de enlaces HTML existentes
+                    $pattern = '/(?<!<a[^>]*)\b(' . $kw_escaped . ')\b(?![^<]*<\/a>)/i';
+                    
+                    // Solo reemplazar una vez
+                    $temp_content = preg_replace($pattern, '<a href="' . esc_url(get_permalink($ex_post->ID)) . '">$1</a>', $nuevo_contenido, 1);
+                    if ($temp_content !== null && $temp_content !== $nuevo_contenido) {
+                        $nuevo_contenido = $temp_content;
+                        $modificado = true;
+                    }
+                }
+            }
+
+            if ($modificado) {
+                wp_update_post(array(
+                    'ID'           => $post_id,
+                    'post_content' => $nuevo_contenido,
+                ));
+            }
         }
     }
 

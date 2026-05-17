@@ -21,6 +21,7 @@ $content_mode  = get_option('nwwp_content_mode', 'excerpt');
 $posts_per_hour = get_option('nwwp_posts_per_hour', 5);
 $activar_breaking = get_option('nwwp_breaking_enabled', false);
 $default_image_id = get_option('nwwp_default_image_id', 0);
+$image_mode = get_option('nwwp_image_mode', 'original');
 $category_map = get_option('nwwp_category_map', array());
 $extra_keywords = get_option('nwwp_extra_keywords', '');
 $nwwp_sources = get_option('nwwp_sources', array());
@@ -531,6 +532,23 @@ if ($woocommerce_active && $is_owner_mode) {
                         </div>
                     </div>
                 </div>
+
+                <!-- Política de Imágenes de Portada -->
+                <div class="nwwp-form-row">
+                    <div class="nwwp-form-label">
+                        <label for="nwwp_image_mode">Imagen de Portada</label>
+                    </div>
+                    <div class="nwwp-form-input">
+                        <select id="nwwp_image_mode" name="nwwp_image_mode">
+                            <option value="original" <?php selected('original', $image_mode); ?>>Usar la imagen original del artículo (por defecto)</option>
+                            <option value="premium" <?php selected('premium', $image_mode); ?>>Usar fotografía premium libre de derechos (Pexels/Pixabay)</option>
+                            <option value="mixed" <?php selected('mixed', $image_mode); ?>>Mixto (Original, y si no tiene, usar foto premium)</option>
+                        </select>
+                        <p class="nwwp-form-hint">
+                            Controla de dónde se obtienen las imágenes destacadas de tus publicaciones.
+                        </p>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -780,9 +798,10 @@ if ($woocommerce_active && $is_owner_mode) {
         <div class="nwwp-footer">
             <div class="nwwp-footer-left">
                 NewsWire WP v1.0 · Powered by <strong>Byline</strong>
+                <span id="nwwp-save-message" style="margin-left: 20px; display: none;"></span>
             </div>
             <div class="nwwp-footer-right">
-                <button type="submit" name="submit" class="nwwp-btn-guardar">
+                <button type="submit" id="nwwp-save-btn" class="nwwp-btn-guardar">
                     Guardar todos los cambios
                 </button>
             </div>
@@ -842,6 +861,7 @@ if ($woocommerce_active && $is_owner_mode) {
                 }
 
                 formData.append('nwwp_default_image_id', document.getElementById('nwwp_default_image_id').value);
+                formData.append('nwwp_image_mode', document.getElementById('nwwp_image_mode').value);
                 formData.append('nwwp_category_map', JSON.stringify(mapData));
                 formData.append('nwwp_extra_keywords', document.getElementById('nwwp_extra_keywords').value);
 

@@ -55,10 +55,18 @@ async def get_db():
 async def init_db():
     from models import (
         Client, Source, Article, ClientArticle, 
-        SourceProfile, ActivityLog
+        SourceProfile, ActivityLog, AIKey
     )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Auto-migración para el nuevo campo premium_image_url
+        try:
+            from sqlalchemy import text
+            await conn.execute(text("ALTER TABLE articles ADD COLUMN premium_image_url VARCHAR(500)"))
+            print("📅 Auto-migración: Columna 'premium_image_url' agregada con éxito")
+        except Exception:
+            # Si ya existe o falla por otra razón, no interrumpe el arranque
+            pass
 
 
 get_session_maker = AsyncSessionLocal

@@ -258,11 +258,11 @@ class nwwp_Cron
      * 
      * Llama al scraper para obtener artículos nuevos y los publica en WordPress
      */
-    public function ejecutar_auto_publicacion()
+    public function ejecutar_auto_publicacion($force = false)
     {
         // Verificar si la auto-publicación está habilitada
         $auto_publish_enabled = get_option('nwwp_auto_publish_enabled', false);
-        if (!$auto_publish_enabled) {
+        if (!$auto_publish_enabled && !$force) {
             return;
         }
 
@@ -297,47 +297,40 @@ class nwwp_Cron
             'sslverify' => true,
         ));
 
+        $articles_fetched = 0;
+
         if (is_wp_error($response)) {
             $this->registrar_log(
                 'auto_publish',
-                'error',
-                'Error al conectar con API: ' . $response->get_error_message()
+                'warning',
+                'Error al conectar con la API de scraping bajo demanda: ' . $response->get_error_message() . '. Se intentará obtener artículos ya existentes en Byline.'
             );
-            return;
+        } else {
+            $status_code = wp_remote_retrieve_response_code($response);
+            if ($status_code !== 200) {
+                $this->registrar_log(
+                    'auto_publish',
+                    'warning',
+                    'API de scraping respondió con código: ' . $status_code . '. Se intentará obtener artículos ya existentes en Byline.'
+                );
+            } else {
+                $body = wp_remote_retrieve_body($response);
+                $data = json_decode($body, true);
+                if (isset($data['success']) && $data['success']) {
+                    $articles_fetched = isset($data['articles_fetched']) ? intval($data['articles_fetched']) : 0;
+                } else {
+                    $this->registrar_log(
+                        'auto_publish',
+                        'warning',
+                        'API respondió con error en scraping: ' . ($data['message'] ?? 'Error desconocido') . '. Se intentará obtener artículos ya existentes en Byline.'
+                    );
+                }
+            }
         }
 
-        $status_code = wp_remote_retrieve_response_code($response);
-        if ($status_code !== 200) {
-            $this->registrar_log(
-                'auto_publish',
-                'error',
-                'API respondió con código: ' . $status_code
-            );
-            return;
-        }
-
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-
-        if (!isset($data['success']) || !$data['success']) {
-            $this->registrar_log(
-                'auto_publish',
-                'error',
-                'API respondió con error: ' . ($data['message'] ?? 'Error desconocido')
-            );
-            return;
-        }
-
-        $articles_fetched = $data['articles_fetched'] ?? 0;
-
-        if ($articles_fetched === 0) {
-            $this->registrar_log(
-                'auto_publish',
-                'info',
-                'No se encontraron artículos nuevos en esta ejecución'
-            );
-            return;
-        }
+        // Definir cuántos artículos importar. Si se obtuvo scrapeados, usamos esa cantidad.
+        // Si no se obtuvieron nuevos, intentamos traer hasta 5 artículos pendientes que ya estén en la base de datos de Byline.
+        $limit_to_fetch = $articles_fetched > 0 ? $articles_fetched : 5;
 
         // Importar los artículos obtenidos
         $api_client = new nwwp_API_Client();
@@ -345,13 +338,13 @@ class nwwp_Cron
         $importer = new nwwp_Importer($api_client, $author_manager);
 
         // Obtener artículos recientes de la API para importar
-        $articulos = $api_client->get_news('', false, $articles_fetched);
+        $articulos = $api_client->get_news('', false, $limit_to_fetch);
 
         if (is_wp_error($articulos) || empty($articulos)) {
             $this->registrar_log(
                 'auto_publish',
-                'error',
-                'No se pudieron obtener los artículos para importar'
+                'info',
+                'No se encontraron artículos nuevos ni pendientes en Byline para importar.'
             );
             return;
         }
@@ -375,8 +368,9 @@ class nwwp_Cron
             'auto_publish',
             'success',
             sprintf(
-                'Auto-publish: %d artículos obtenidos, %d importados, %d duplicados, %d errores',
+                'Auto-publish: %d artículos nuevos scrapeados, se procesaron %d pendientes de Byline. Resultado: %d importados, %d duplicados, %d errores',
                 $articles_fetched,
+                count($articulos),
                 $resultados['importados'],
                 $resultados['saltados'],
                 count($resultados['errores'])
@@ -393,7 +387,7 @@ class nwwp_Cron
     public static function ejecutar_auto_publicacion_inmediata()
     {
         $cron_instance = new self();
-        $cron_instance->ejecutar_auto_publicacion();
+        $cron_instance->ejecutar_auto_publicacion(true);
     }
 
     public static function limpiar_eventos_cron()

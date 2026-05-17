@@ -475,6 +475,7 @@
             <button class="nav-tab" data-panel="sources">📡 Fuentes</button>
             <button class="nav-tab" data-panel="articles">📰 Artículos</button>
             <button class="nav-tab" data-panel="logs">📋 Logs</button>
+            <button class="nav-tab" data-panel="ai-keys">🔑 Keys de IA</button>
         </div>
 
         <!-- ============================================
@@ -791,6 +792,52 @@ https://rss.bbc.com/news/world/latam/rss.xml
             </div>
         </div>
 
+        <!-- ============================================
+             PANEL KEYS DE IA
+             ============================================ -->
+        <div id="panel-ai-keys" class="panel">
+            <div class="card">
+                <h2>🔑 Pool de API Keys de Inteligencia Artificial</h2>
+                <p style="margin-bottom: 16px; color: #64748b; font-size: 14px;">
+                    Registra tus API Keys de Google Gemini (Flash 1.5 es 100% gratis), Groq o OpenRouter. El sistema rotará automáticamente las llaves para evitar límites de velocidad, y en caso de que una falle, pasará a la siguiente de forma totalmente autónoma.
+                </p>
+
+                <!-- Formulario de carga de llaves -->
+                <div class="new-client-form">
+                    <div class="form-group">
+                        <label>Proveedor de IA</label>
+                        <select id="new-ai-provider" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1;">
+                            <option value="gemini">Google Gemini (Flash 1.5 - ¡Recomendado Gratis!)</option>
+                            <option value="groq">Groq Cloud (Llama 3.1 - ¡Gratis y ultra rápido!)</option>
+                            <option value="openrouter">OpenRouter (Modelos Gratuitos)</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex: 2;">
+                        <label>API Key</label>
+                        <input type="password" id="new-ai-key-val" placeholder="Pega tu API Key aquí...">
+                    </div>
+                    <button class="btn btn-primary" id="btn-add-ai-key" onclick="addAIKey()">Agregar Key</button>
+                </div>
+
+                <!-- Tabla de keys -->
+                <table class="data-table" style="margin-top: 16px;">
+                    <thead>
+                        <tr>
+                            <th>Proveedor</th>
+                            <th>API Key</th>
+                            <th>Usos</th>
+                            <th>Último Uso</th>
+                            <th>Estado</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ai-keys-table-body">
+                        <tr><td colspan="6" style="text-align: center;">Cargando...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
     </div>
 
     <!-- ============================================
@@ -904,6 +951,8 @@ https://rss.bbc.com/news/world/latam/rss.xml
                     loadArticles();
                 } else if (panelName === 'logs') {
                     loadLogs();
+                } else if (panelName === 'ai-keys') {
+                    loadAIKeys();
                 }
             });
         });
@@ -1695,6 +1744,7 @@ Esta acción no se puede deshacer.`;
         
         async function loadArticles() {
             const tbody = document.getElementById('articles-table-body');
+            const category = document.getElementById('filter-category').value;
             const breaking = document.getElementById('filter-breaking').value;
             const status = document.getElementById('filter-status').value;
             
@@ -1843,6 +1893,113 @@ Esta acción no se puede deshacer.`;
         document.getElementById('filter-category').addEventListener('change', () => { articlesPage = 0; });
         document.getElementById('filter-breaking').addEventListener('change', () => { articlesPage = 0; });
         document.getElementById('filter-status').addEventListener('change', () => { articlesPage = 0; });
+
+        // ============================================
+        // KEYS DE IA (POOL Y ROTACIÓN)
+        // ============================================
+        
+        async function loadAIKeys() {
+            const tbody = document.getElementById('ai-keys-table-body');
+            try {
+                const res = await fetch(API_BASE + '/admin/ai-keys', { headers: headers() });
+                if (!res.ok) throw new Error();
+                const keys = await res.json();
+                
+                if (!keys.length) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">No hay API Keys registradas en el pool. ¡Agrega tu primera llave arriba!</td></tr>';
+                    return;
+                }
+                
+                tbody.innerHTML = keys.map(k => `
+                    <tr>
+                        <td><strong style="color: #2d5a87; text-transform: uppercase;">${k.provider}</strong></td>
+                        <td style="font-family: monospace;">...${k.api_key.slice(-8)}</td>
+                        <td><span class="badge badge-basic">${k.usage_count} usos</span></td>
+                        <td>${k.last_used ? new Date(k.last_used).toLocaleString() : '—'}</td>
+                        <td>
+                            <label class="toggle-switch">
+                                <input type="checkbox" ${k.is_active ? 'checked' : ''} 
+                                    onchange="toggleAIKey(${k.id})">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </td>
+                        <td>
+                            <button class="btn btn-danger btn-sm" onclick="deleteAIKey(${k.id})">🗑️ Eliminar</button>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: red;">Error cargando API Keys</td></tr>';
+            }
+        }
+
+        async function addAIKey() {
+            const provider = document.getElementById('new-ai-provider').value;
+            const api_key = document.getElementById('new-ai-key-val').value.trim();
+            const btn = document.getElementById('btn-add-ai-key');
+            
+            if (!api_key) {
+                alert('La API Key es obligatoria');
+                return;
+            }
+            
+            btn.disabled = true;
+            btn.textContent = 'Agregando...';
+            
+            try {
+                const res = await fetch(API_BASE + '/admin/ai-keys', {
+                    method: 'POST',
+                    headers: headers(),
+                    body: JSON.stringify({ provider, api_key })
+                });
+                
+                if (res.ok) {
+                    document.getElementById('new-ai-key-val').value = '';
+                    alert('API Key agregada correctamente al pool');
+                    loadAIKeys();
+                } else {
+                    const err = await res.json();
+                    alert('Error: ' + (err.detail || 'No se pudo agregar la API Key'));
+                }
+            } catch (e) {
+                alert('Error de conexión al servidor');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Agregar Key';
+            }
+        }
+
+        async function toggleAIKey(id) {
+            try {
+                const res = await fetch(API_BASE + `/admin/ai-keys/${id}/toggle`, {
+                    method: 'PATCH',
+                    headers: headers()
+                });
+                if (!res.ok) throw new Error();
+                loadAIKeys();
+            } catch (e) {
+                alert('Error al cambiar el estado de la API Key');
+            }
+        }
+
+        async function deleteAIKey(id) {
+            if (!confirm('¿Estás seguro de que deseas eliminar esta API Key del pool?')) return;
+            
+            try {
+                const res = await fetch(API_BASE + `/admin/ai-keys/${id}`, {
+                    method: 'DELETE',
+                    headers: headers()
+                });
+                if (res.ok) {
+                    alert('API Key eliminada correctamente');
+                    loadAIKeys();
+                } else {
+                    throw new Error();
+                }
+            } catch (e) {
+                alert('Error al eliminar la API Key');
+            }
+        }
 
         // Verificar si hay sesión guardada al cargar
         checkSavedSecret();

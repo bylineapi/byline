@@ -70,6 +70,7 @@ class Article(Base):
     content = Column(Text, nullable=True)
     excerpt = Column(String(1000), nullable=True)
     image_url = Column(String(500), nullable=True)
+    premium_image_url = Column(String(500), nullable=True)
     original_url = Column(String(500), nullable=False, unique=True)
     category = Column(String(100), nullable=True)
     impact_score = Column(Float, default=0.0, nullable=False)
@@ -129,4 +130,22 @@ class ActivityLog(Base):
     action = Column(String(100), nullable=False)  # Nombre de la acción/evento
     result = Column(String(20), nullable=False)    # success, error, warning
     detail = Column(Text, nullable=True)          # Detalles adicionales
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+# ─── Tabla: ai_keys (Pool de API Keys para Inteligencia Artificial) ────────────
+
+class AIKey(Base):
+    """
+    Tabla para almacenar las API Keys de los proveedores de IA gratuitos.
+    Soporta Google Gemini, Groq y OpenRouter para rotación y fallback.
+    """
+    __tablename__ = "ai_keys"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    provider = Column(String(50), nullable=False)  # gemini, groq, openrouter
+    api_key = Column(String(500), nullable=False, unique=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    usage_count = Column(Integer, default=0, nullable=False)
+    last_used = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

@@ -12,6 +12,7 @@ from database import get_session_maker
 from models import Source, Article, ArticleStatusEnum, SourceProfile, ActivityLog
 from scraper import fetch_rss, MIN_CONFIDENCE_FOR_PROFILER
 from scorer import ImpactScorer
+from ai_manager import rewrite_article_content, buscar_imagen_premium
 
 logger = logging.getLogger(__name__)
 
@@ -167,13 +168,25 @@ async def scraping_job(force_date: Optional[datetime] = None, source_ids: Option
                             logger.info("️ Artículo duplicado, saltando: %s", data.get("title", "")[:60])
                             continue
                         
+                        # Re-redactar artículo con IA si hay llaves de IA configuradas
+                        ai_data = await rewrite_article_content(data["title"], data["content"])
+                        title_to_save = ai_data.get("title", data["title"])
+                        content_to_save = ai_data.get("content", data["content"])
+                        excerpt_to_save = ai_data.get("summary", data.get("excerpt", ""))
+                        
+                        # Buscar imagen premium en Pixabay
+                        premium_image = None
+                        if ai_data.get("keywords"):
+                            premium_image = await buscar_imagen_premium(ai_data["keywords"])
+                            
                         # GUARDAR TODOS los artículos - sin filtrar por score
                         article = Article(
                             source_id=data["source_id"],
-                            title=data["title"],
-                            content=data["content"],
-                            excerpt=data.get("excerpt", ""),
+                            title=title_to_save,
+                            content=content_to_save,
+                            excerpt=excerpt_to_save,
                             image_url=data.get("image_url"),
+                            premium_image_url=premium_image,
                             original_url=data["original_url"],
                             category=data.get("category"),
                             impact_score=0.0,
@@ -424,12 +437,24 @@ async def execute_scraping(client_id: Optional[int] = None, max_sources: int = 1
                 
                 # Guardar artículo
                 async with get_session_maker() as db:
+                    # Re-redactar artículo con IA si hay llaves de IA configuradas
+                    ai_data = await rewrite_article_content(data["title"], data["content"])
+                    title_to_save = ai_data.get("title", data["title"])
+                    content_to_save = ai_data.get("content", data["content"])
+                    excerpt_to_save = ai_data.get("summary", data.get("excerpt", ""))
+                    
+                    # Buscar imagen premium en Pixabay
+                    premium_image = None
+                    if ai_data.get("keywords"):
+                        premium_image = await buscar_imagen_premium(ai_data["keywords"])
+                        
                     article = Article(
                         source_id=fuente.id,
-                        title=data["title"],
-                        content=data["content"],
-                        excerpt=data.get("excerpt", ""),
+                        title=title_to_save,
+                        content=content_to_save,
+                        excerpt=excerpt_to_save,
                         image_url=data.get("image_url"),
+                        premium_image_url=premium_image,
                         original_url=data["original_url"],
                         category=data.get("category"),
                         impact_score=0.0,
@@ -442,7 +467,7 @@ async def execute_scraping(client_id: Optional[int] = None, max_sources: int = 1
                     total_nuevos += 1
                     urls_existentes.add(data["original_url"])
                     
-                    logger.info("✅ Artículo obtenido: %s", data.get("title", "")[:60])
+                    logger.info("✅ Artículo obtenido: %s", title_to_save[:60])
                     
                     # Si llegamos al límite, detener
                     if total_nuevos >= limit:

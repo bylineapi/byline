@@ -1,8 +1,8 @@
-# main.py - Punto de entrada de la API FastAPI para distribución de noticias
-
 import os
 import secrets
 import logging
+import time
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Optional
@@ -17,14 +17,14 @@ from sqlalchemy.orm import joinedload
 from database import get_db, init_db
 from models import (
     Client, Source, Article, ClientArticle, SourceProfile,
-    PlanEnum, ArticleStatusEnum, ActivityLog,
+    PlanEnum, ArticleStatusEnum, ActivityLog, AIKey,
 )
 from schemas import (
     HealthOut, ClientCreate, ClientOut, ClientList,
     ClientUpdate, ClientUpdateOut, StatsOut, LogOut, ArticleListItem,
     SourceCreate, SourceOut, ArticleOut,
     SourceProfileOut, AnalyzeHTMLIn, AnalyzeProfileOut,
-    VerifyProfileOut, SampleExtraction,
+    VerifyProfileOut, SampleExtraction, AIKeyCreate, AIKeyOut,
 )
 from auth import (
     get_current_client, verify_admin_secret,
@@ -80,6 +80,35 @@ async def lifespan(app: FastAPI):
         logger.info("Aplicación cerrada correctamente")
 
 
+# ─── App Security Bunker (Rate Limiting & Security Headers) ─────────────────────
+
+RATE_LIMIT_WINDOW_SECONDS = 60
+LIMITS = {
+    "public": 100,  # 100 peticiones por minuto por IP para endpoints públicos/clientes
+    "admin": 10,    # 10 peticiones por minuto por IP para endpoints administrativos (anti brute-force)
+}
+
+# Historial de peticiones en memoria: {ip: {type: [timestamps]}}
+ip_request_history = defaultdict(lambda: defaultdict(list))
+
+def check_rate_limit(ip: str, endpoint_type: str = "public") -> bool:
+    """
+    Verifica y limpia el historial de peticiones de una IP.
+    Retorna True si es aceptada, False si sobrepasa el límite.
+    """
+    now = time.time()
+    history = ip_request_history[ip][endpoint_type]
+    
+    # Limpiar timestamps antiguos
+    ip_request_history[ip][endpoint_type] = [t for t in history if now - t < RATE_LIMIT_WINDOW_SECONDS]
+    
+    limit = LIMITS.get(endpoint_type, 100)
+    if len(ip_request_history[ip][endpoint_type]) >= limit:
+        return False
+        
+    ip_request_history[ip][endpoint_type].append(now)
+    return True
+
 # ─── App ──────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
@@ -88,6 +117,48 @@ app = FastAPI(
     version="0.2.0",
     lifespan=lifespan,
 )
+
+from fastapi import Request
+
+@app.middleware("http")
+async def security_and_rate_limiting_middleware(request: Request, call_next):
+    # 1. Obtener IP real del cliente (soportando proxies como Render/Cloudflare)
+    ip = request.client.host if request.client else "unknown"
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        ip = forwarded_for.split(",")[0].strip()
+
+    path = request.url.path
+    
+    # Determinar tipo de endpoint (admin vs público)
+    endpoint_type = "public"
+    if path.startswith("/admin") or path.startswith("/api/admin") or "secret" in path:
+        endpoint_type = "admin"
+
+    # 2. Control de Tasa (Rate Limiting) - Ignorar localhost
+    if ip != "127.0.0.1" and not check_rate_limit(ip, endpoint_type):
+        logger.warning(f"🚫 [Security Bunker] Rate Limit excedido para la IP {ip} en {path}")
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Too many requests. Please wait a minute before retrying."}
+        )
+
+    # 3. Ejecutar Petición
+    response = await call_next(request)
+
+    # 4. Inyectar Cabeceras Militares de Seguridad (Anti-Hackeo)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; frame-ancestors 'none';"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    
+    # Ocultar firma del servidor para dificultar reconocimiento del sistema
+    if "server" in response.headers:
+        del response.headers["server"]
+        
+    return response
 
 app.add_middleware(
     CORSMiddleware,
@@ -338,6 +409,77 @@ async def update_client(
         is_active=client.is_active,
         created_at=client.created_at,
     )
+
+
+# ─── Admin: AI API Keys (Pool de Inteligencia Artificial) ─────────────────────
+
+@app.post("/admin/ai-keys", response_model=AIKeyOut)
+async def add_ai_key(
+    data: AIKeyCreate,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(verify_admin_secret),
+):
+    """Agrega una nueva API Key al pool de Inteligencia Artificial."""
+    # Verificar si ya existe
+    result = await db.execute(select(AIKey).where(AIKey.api_key == data.api_key))
+    existing = result.scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=400, detail="Esta API Key ya está registrada")
+
+    ai_key = AIKey(
+        provider=data.provider,
+        api_key=data.api_key,
+    )
+    db.add(ai_key)
+    await db.commit()
+    await db.refresh(ai_key)
+    return ai_key
+
+
+@app.get("/admin/ai-keys", response_model=list[AIKeyOut])
+async def list_ai_keys(
+    db: AsyncSession = Depends(get_db),
+    _=Depends(verify_admin_secret),
+):
+    """Lista todas las API Keys configuradas en el pool."""
+    result = await db.execute(select(AIKey).order_by(AIKey.created_at.desc()))
+    keys = result.scalars().all()
+    return keys
+
+
+@app.delete("/admin/ai-keys/{key_id}", response_model=dict)
+async def delete_ai_key(
+    key_id: int,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(verify_admin_secret),
+):
+    """Elimina una API Key del pool."""
+    result = await db.execute(select(AIKey).where(AIKey.id == key_id))
+    ai_key = result.scalar_one_or_none()
+    if not ai_key:
+        raise HTTPException(status_code=404, detail="API Key no encontrada")
+
+    await db.delete(ai_key)
+    await db.commit()
+    return {"success": True, "message": "API Key eliminada correctamente"}
+
+
+@app.patch("/admin/ai-keys/{key_id}/toggle", response_model=AIKeyOut)
+async def toggle_ai_key(
+    key_id: int,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(verify_admin_secret),
+):
+    """Activa o desactiva una API Key del pool."""
+    result = await db.execute(select(AIKey).where(AIKey.id == key_id))
+    ai_key = result.scalar_one_or_none()
+    if not ai_key:
+        raise HTTPException(status_code=404, detail="API Key no encontrada")
+
+    ai_key.is_active = not ai_key.is_active
+    await db.commit()
+    await db.refresh(ai_key)
+    return ai_key
 
 
 
@@ -807,10 +949,17 @@ async def get_news(
     if only_breaking:
         statuses = [ArticleStatusEnum.pending_breaking]
 
+    # Excluir artículos ya entregados a este cliente
+    delivered_subquery = (
+        select(ClientArticle.article_id)
+        .where(ClientArticle.client_id == client.id)
+    )
+
     query = (
         select(Article)
         .options(joinedload(Article.source))  # Carga la relación source para evitar N+1
         .where(Article.status.in_(statuses))
+        .where(Article.id.not_in(delivered_subquery))
         .order_by(desc(Article.impact_score), desc(Article.created_at))
     )
 
@@ -850,10 +999,17 @@ async def get_breaking_news(
             detail="Tu plan no incluye noticias de último momento",
         )
 
+    # Excluir artículos ya entregados a este cliente
+    delivered_subquery = (
+        select(ClientArticle.article_id)
+        .where(ClientArticle.client_id == client.id)
+    )
+
     query = (
         select(Article)
         .options(joinedload(Article.source))  # Carga la relación source para evitar N+1
         .where(Article.status == ArticleStatusEnum.pending_breaking)
+        .where(Article.id.not_in(delivered_subquery))
         .order_by(desc(Article.impact_score), desc(Article.created_at))
         .limit(plan["posts_per_category_hour"])
     )

@@ -137,6 +137,7 @@ class ArticleOut(BaseModel):
     content: Optional[str]
     excerpt: Optional[str]
     image_url: Optional[str]
+    premium_image_url: Optional[str] = None
     original_url: str
     category: Optional[str]
     impact_score: float
@@ -212,6 +213,25 @@ class ArticleListItem(BaseModel):
     impact_score: float
     is_breaking: bool
     status: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ─── AI API Keys (Admin Pool) ─────────────────────────────────────────────────
+
+class AIKeyCreate(BaseModel):
+    provider: str = Field(..., pattern=r"^(gemini|groq|openrouter)$")
+    api_key: str = Field(..., min_length=5, max_length=500)
+
+
+class AIKeyOut(BaseModel):
+    id: int
+    provider: str
+    api_key: str
+    is_active: bool
+    usage_count: int
+    last_used: Optional[datetime] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

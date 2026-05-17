@@ -15,6 +15,7 @@ from models import Source
 from profiler import HTMLProfiler
 from category_detector import detectar_categoria_texto
 from urllib.parse import urlparse, urljoin
+from bunker import obtener_html_bunker
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ MIN_CONFIDENCE_FOR_PROFILER = 0.7
 _profiler = HTMLProfiler()
 
 
-def _extraer_con_newspaper(url: str) -> dict:
+def _extraer_con_newspaper(url: str, html: Optional[str] = None) -> dict:
     """Extrae título, contenido, imagen y fecha usando newspaper3k (bloqueante)."""
     resultado = {
         "title": None,
@@ -46,7 +47,14 @@ def _extraer_con_newspaper(url: str) -> dict:
     try:
         logger.debug("newspaper3k descargando: %s", url)
         article = NewspaperArticle(url, language="es")
-        article.download()
+        if not html:
+            html = obtener_html_bunker(url)
+        
+        if html:
+            article.set_html(html)
+        else:
+            article.download()
+            
         article.parse()
         resultado["title"] = article.title
         resultado["content"] = article.text
@@ -72,11 +80,10 @@ def _discover_articles_from_url(url: str) -> list[str]:
     logger.info("🔍 Descubriendo artículos en: %s", url)
     enlaces_noticias = []
     try:
-        resp = requests.get(url, timeout=HTTP_TIMEOUT, headers={
-            "User-Agent": "Mozilla/5.0 (compatible; BylineDiscovery/1.0)"
-        })
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
+        html = obtener_html_bunker(url)
+        if not html:
+            return []
+        soup = BeautifulSoup(html, "html.parser")
         domain = urlparse(url).netloc
 
         # Patrones comunes de noticias en URLs
@@ -159,11 +166,10 @@ def _parsear_fecha_str(fecha_str: Optional[str]) -> Optional[datetime]:
 def _extraer_og_image(url: str) -> Optional[str]:
     """Fallback: extrae og:image del HTML con BeautifulSoup (bloqueante)."""
     try:
-        resp = requests.get(url, timeout=HTTP_TIMEOUT, headers={
-            "User-Agent": "Mozilla/5.0 (compatible; NewsBot/1.0)"
-        })
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
+        html = obtener_html_bunker(url)
+        if not html:
+            return None
+        soup = BeautifulSoup(html, "html.parser")
         og_image = soup.find("meta", property="og:image")
         if og_image and og_image.get("content"):
             return og_image["content"]
@@ -289,15 +295,14 @@ async def fetch_rss(source: Source, source_profile: Optional[dict] = None, force
             
             if url_muestra:
                 try:
-                    resp_muestra = await loop.run_in_executor(
+                    html_muestra = await loop.run_in_executor(
                         None, 
-                        lambda: requests.get(url_muestra, timeout=HTTP_TIMEOUT, headers={
-                            "User-Agent": "Mozilla/5.0 (compatible; BylineAutoBot/1.0)"
-                        })
+                        lambda: obtener_html_bunker(url_muestra)
                     )
-                    resp_muestra.raise_for_status()
+                    if not html_muestra:
+                        raise Exception("Bunker no pudo descargar el HTML muestra")
                     
-                    analisis = _profiler.analyze(resp_muestra.text, url_muestra)
+                    analisis = _profiler.analyze(html_muestra, url_muestra)
                     if analisis.get("confidence_score", 0) >= 0.6:
                         logger.info("✅ Selectores aprendidos para %s (confidence: %.2f)", source.name, analisis["confidence_score"])
                         nuevo_perfil_aprendido = {

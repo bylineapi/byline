@@ -387,6 +387,13 @@ class nwwp_Admin
         if (isset($_POST['nwwp_default_image_id'])) {
             update_option('nwwp_default_image_id', absint($_POST['nwwp_default_image_id']), true);
         }
+        if (isset($_POST['nwwp_image_mode'])) {
+            $image_mode = sanitize_text_field($_POST['nwwp_image_mode']);
+            if (in_array($image_mode, array('original', 'premium', 'mixed'), true)) {
+                update_option('nwwp_image_mode', $image_mode, true);
+                error_log('NewsWire WP: Image mode guardado: ' . $image_mode);
+            }
+        }
         if (isset($_POST['nwwp_category_map'])) {
             $map = json_decode(stripslashes($_POST['nwwp_category_map']), true);
             if (is_array($map)) {
@@ -439,22 +446,23 @@ class nwwp_Admin
             update_option('nwwp_product_map', $clean_map, true);
         }
 
-        // Si la auto-publicación está habilitada, ejecutar inmediatamente
-        $auto_publish_enabled = get_option('nwwp_auto_publish_enabled', false);
-        if ($auto_publish_enabled) {
-            error_log('NewsWire WP: Ejecutando auto-publicacion inmediata...');
-            // Ejecutar auto-publicación inmediatamente de forma síncrona
+        // Si hay una API Key configurada, ejecutar importación/auto-publicación inmediatamente para traer artículos
+        $api_key = get_option('nwwp_api_key', '');
+        $auto_publish_triggered = false;
+        if (!empty($api_key)) {
+            error_log('NewsWire WP: Ejecutando auto-publicacion/importacion inmediata...');
             try {
                 nwwp_Cron::ejecutar_auto_publicacion_inmediata();
-                error_log('NewsWire WP: Auto-publicacion ejecutada exitosamente');
+                error_log('NewsWire WP: Auto-publicacion/importacion inmediata ejecutada exitosamente');
+                $auto_publish_triggered = true;
             } catch (Exception $e) {
-                error_log('NewsWire WP: Error en auto-publicacion: ' . $e->getMessage());
+                error_log('NewsWire WP: Error en auto-publicacion/importacion: ' . $e->getMessage());
             }
         }
 
         wp_send_json_success(array(
             'message' => 'Configuración guardada correctamente',
-            'auto_publish_triggered' => $auto_publish_enabled
+            'auto_publish_triggered' => $auto_publish_triggered
         ));
     }
 

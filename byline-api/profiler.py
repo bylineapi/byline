@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 import requests
+from bunker import obtener_html_bunker
 
 logger = logging.getLogger(__name__)
 
@@ -504,16 +505,12 @@ class HTMLProfiler:
         Returns:
             Diccionario con title, body, image_url, date, author, original_url
         """
-        try:
-            response = requests.get(url, timeout=HTTP_TIMEOUT, headers={
-                "User-Agent": "Mozilla/5.0 (compatible; BylineProfiler/1.0)"
-            })
-            response.raise_for_status()
-        except Exception as e:
-            logger.warning("Error descargando %s: %s", url, e)
+        html = obtener_html_bunker(url)
+        if not html:
+            logger.warning("Bunker no pudo descargar %s", url)
             return self._empty_result(url)
 
-        soup = BeautifulSoup(response.text, "html.parser")
+        soup = BeautifulSoup(html, "html.parser")
 
         resultado = {
             "title": None,
@@ -573,7 +570,7 @@ class HTMLProfiler:
         # Si la extracción falló críticamente, re-analizar
         if not resultado["title"] or not resultado["body"]:
             logger.info("Perfil falló para %s, re-analizando", url)
-            reanalizado = self.analyze(response.text, url)
+            reanalizado = self.analyze(html, url)
             # Actualizar selectores en profile para siguiente intento
             profile.update({
                 k: reanalizado.get(k)

@@ -96,6 +96,7 @@ async def verificar():
             content = Column(Text, nullable=True)
             excerpt = Column(String(1000), nullable=True)
             image_url = Column(String(500), nullable=True)
+            premium_image_url = Column(String(500), nullable=True)
             original_url = Column(String(500), nullable=False, unique=True)
             category = Column(String(100), nullable=True)
             impact_score = Column(Float, default=0.0, nullable=False)
@@ -140,6 +141,11 @@ async def verificar():
         )
         async with engine2.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            try:
+                await conn.execute(text("ALTER TABLE articles ADD COLUMN premium_image_url VARCHAR(500)"))
+                print("📅 Auto-migración en verificar_conexion: Columna 'premium_image_url' agregada con éxito")
+            except Exception:
+                pass
         print("✅ Tablas creadas/verificadas en Neon")
         await engine2.dispose()
 
