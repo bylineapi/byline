@@ -69,6 +69,9 @@ function nwwp_activar_plugin() {
     // Registrar eventos cron
     $cron = new nwwp_Cron();
     $cron->registrar_eventos_cron();
+
+    // Habilitar auto-publicación por defecto
+    update_option('nwwp_auto_publish_enabled', 1);
 }
 
 function nwwp_desactivar_plugin() {
@@ -112,6 +115,47 @@ function nwwp_init() {
     if (is_admin()) {
         new nwwp_Admin();
     }
+}
+
+// ─── Sincronización en cada page load (fallback cuando WP Cron no se ejecuta) ─
+
+add_action('wp_head', 'nwwp_check_sync_on_page_load');
+
+function nwwp_check_sync_on_page_load() {
+    if (!get_option('nwwp_auto_publish_enabled', false)) {
+        return;
+    }
+
+    $api_key = get_option('nwwp_api_key', '');
+    if (empty($api_key)) {
+        return;
+    }
+
+    $frequency = get_option('nwwp_auto_publish_frequency', '15');
+    $last_sync = intval(get_option('nwwp_last_sync_time', 0));
+    $interval = intval($frequency) * 60;
+
+    if (time() - $last_sync < $interval) {
+        return;
+    }
+
+    $lock = get_transient('nwwp_sync_lock');
+    if ($lock) {
+        return;
+    }
+    set_transient('nwwp_sync_lock', true, 120);
+
+    update_option('nwwp_last_sync_time', time());
+
+    wp_remote_post(admin_url('admin-ajax.php'), array(
+        'timeout'   => 0.01,
+        'blocking'  => false,
+        'sslverify' => false,
+        'body'      => array(
+            'action' => 'nwwp_ajax_sync',
+            'nonce'  => wp_create_nonce('nwwp_sync_nonce'),
+        ),
+    ));
 }
 
 // ─── Funciones auxiliares ──────────────────────────────────────────────────

@@ -3,8 +3,10 @@
 /**
  * Clase NWWP_Cron
  *
- * Gestiona los eventos cron del plugin: importación horaria y
- * verificación de noticias de último momento.
+ * Gestiona la sincronización con Byline API:
+ * - Obtiene artículos pendientes filtrados por las categorías del cliente
+ * - Los importa como posts en WordPress
+ * - NO ejecuta scraping (el scraper corre 24/7 en la API)
  *
  * @package NewsWire_WP
  */
@@ -16,209 +18,113 @@ if (!defined('ABSPATH')) {
 class nwwp_Cron
 {
 
-    const HOOK_BREAKING_NEWS = 'nwwp_breaking_news_check';
-    const HOOK_HOURLY_IMPORT = 'nwwp_hourly_import';
-    const HOOK_AUTO_PUBLISH = 'nwwp_auto_publish';
-    const SCHEDULE_FIVE_MIN  = 'nwwp_five_minutes';
+    const HOOK_SYNC = 'nwwp_sync_articles';
 
     public function __construct()
     {
-        add_filter('cron_schedules', array($this, 'agregar_intervalo_cinco_minutos'));
-        add_filter('cron_schedules', array($this, 'agregar_intervalos_auto_publish'));
+        add_filter('cron_schedules', array($this, 'agregar_intervalos_sync'));
         add_action('admin_init', array($this, 'registrar_eventos_cron'));
-        add_action(self::HOOK_BREAKING_NEWS, array($this, 'ejecutar_breaking_news'));
-        add_action(self::HOOK_HOURLY_IMPORT, array($this, 'ejecutar_import_horaria'));
-        add_action(self::HOOK_AUTO_PUBLISH, array($this, 'ejecutar_auto_publicacion'));
+        add_action(self::HOOK_SYNC, array($this, 'ejecutar_sincronizacion'));
     }
 
-    public function agregar_intervalo_cinco_minutos($schedules)
+    public function agregar_intervalos_sync($schedules)
     {
-        $schedules[self::SCHEDULE_FIVE_MIN] = array(
+        $schedules['nwwp_5min'] = array(
             'interval' => 300,
             'display'  => __('Cada 5 minutos', 'newswire-wp'),
         );
-        return $schedules;
-    }
-
-    public function agregar_intervalos_auto_publish($schedules)
-    {
-        // Agregar intervalos personalizados para auto-publicación
-        $intervals = array(
-            15 => 'Cada 15 minutos',
-            30 => 'Cada 30 minutos',
-            60 => 'Cada hora',
-            120 => 'Cada 2 horas',
-            360 => 'Cada 6 horas',
+        $schedules['nwwp_15min'] = array(
+            'interval' => 900,
+            'display'  => __('Cada 15 minutos', 'newswire-wp'),
         );
-
-        foreach ($intervals as $minutes => $label) {
-            $schedule_name = 'nwwp_auto_publish_' . $minutes . 'min';
-            $schedules[$schedule_name] = array(
-                'interval' => $minutes * 60,
-                'display'  => __($label, 'newswire-wp'),
-            );
-        }
-
+        $schedules['nwwp_30min'] = array(
+            'interval' => 1800,
+            'display'  => __('Cada 30 minutos', 'newswire-wp'),
+        );
         return $schedules;
     }
 
     public function registrar_eventos_cron()
     {
-        if (!wp_next_scheduled(self::HOOK_BREAKING_NEWS)) {
-            wp_schedule_event(time(), self::SCHEDULE_FIVE_MIN, self::HOOK_BREAKING_NEWS);
-        }
-
-        if (!wp_next_scheduled(self::HOOK_HOURLY_IMPORT)) {
-            wp_schedule_event(time(), 'hourly', self::HOOK_HOURLY_IMPORT);
-        }
-
-        // Registrar evento de auto-publicación si está habilitado
-        $auto_publish_enabled = get_option('nwwp_auto_publish_enabled', false);
-        if ($auto_publish_enabled) {
-            $frequency = get_option('nwwp_auto_publish_frequency', '30');
-            $schedule_name = 'nwwp_auto_publish_' . $frequency . 'min';
-
-            // Limpiar evento anterior si existe
-            $timestamp = wp_next_scheduled(self::HOOK_AUTO_PUBLISH);
-            if ($timestamp) {
-                wp_unschedule_event($timestamp, self::HOOK_AUTO_PUBLISH);
-            }
-
-            // Programar nuevo evento con la frecuencia seleccionada
-            wp_schedule_event(time(), $schedule_name, self::HOOK_AUTO_PUBLISH);
-        } else {
-            // Si está deshabilitado, limpiar evento
-            $timestamp = wp_next_scheduled(self::HOOK_AUTO_PUBLISH);
-            if ($timestamp) {
-                wp_unschedule_event($timestamp, self::HOOK_AUTO_PUBLISH);
-            }
+        if (!wp_next_scheduled(self::HOOK_SYNC)) {
+            $frequency = get_option('nwwp_auto_publish_frequency', '15');
+            $schedule_map = array('5' => 'nwwp_5min', '15' => 'nwwp_15min', '30' => 'nwwp_30min');
+            $schedule = isset($schedule_map[$frequency]) ? $schedule_map[$frequency] : 'nwwp_15min';
+            wp_schedule_event(time(), $schedule, self::HOOK_SYNC);
         }
     }
 
-    public function ejecutar_breaking_news()
+    /**
+     * Único método de sincronización:
+     * 1. Llama a sync_articles() con las categorías del cliente
+     * 2. Importa los artículos recibidos como posts de WordPress
+     * 3. NO ejecuta scraping (el scraper ya corre 24/7 en la API)
+     */
+    public function ejecutar_sincronizacion($force = false)
     {
         $api_key = get_option('nwwp_api_key', '');
-
         if (empty($api_key)) {
-            $this->registrar_log(
-                'breaking_news',
-                'error',
-                'No se puede ejecutar breaking news: API Key no configurada'
-            );
+            $this->registrar_log('sync', 'error', 'API Key no configurada');
             return;
         }
 
-        $activar_breaking = get_option('nwwp_breaking_enabled', false);
-        if (!$activar_breaking) {
-            return;
-        }
+        $limit = $this->obtener_limite_plan();
+        $content_mode = get_option('nwwp_content_mode', 'excerpt');
+        $category_map = $this->obtener_mapeo_categorias();
 
         $api_client = new nwwp_API_Client();
-        $articulos  = $api_client->get_news('', true);
-
-        if (is_wp_error($articulos)) {
-            $this->registrar_log(
-                'breaking_news',
-                'error',
-                'Error al obtener noticias breaking: ' . $articulos->get_error_message()
-            );
-            return;
-        }
-
-        if (empty($articulos) || !is_array($articulos)) {
-            $this->registrar_log('breaking_news', 'info', 'No se encontraron noticias breaking en esta verificación');
-            return;
-        }
-
         $author_manager = new nwwp_Author_Manager();
-        $importer       = new nwwp_Importer($api_client, $author_manager);
+        $importer = new nwwp_Importer($api_client, $author_manager);
 
-        $content_mode = get_option('nwwp_content_mode', 'excerpt');
-        $resultados   = $importer->import_multiple($articulos, array(
-            'content_mode'  => $content_mode,
-            'category_map'  => $this->obtener_mapeo_categorias(),
-        ));
-
-        $this->registrar_log(
-            'breaking_news',
-            'success',
-            sprintf(
-                'Breaking news: %d importados, %d duplicados, %d errores',
-                $resultados['importados'],
-                $resultados['saltados'],
-                count($resultados['errores'])
-            )
-        );
-    }
-
-    public function ejecutar_import_horaria()
-    {
-        $api_key = get_option('nwwp_api_key', '');
-
-        if (empty($api_key)) {
-            $this->registrar_log(
-                'hourly_import',
-                'error',
-                'No se puede ejecutar importación horaria: API Key no configurada'
-            );
-            return;
-        }
-
-        $api_client    = new nwwp_API_Client();
-        $author_manager = new nwwp_Author_Manager();
-        $importer       = new nwwp_Importer($api_client, $author_manager);
-        $category_map   = $this->obtener_mapeo_categorias();
-        $limit_por_cat  = intval(get_option('nwwp_posts_per_hour', 5));
-        $content_mode  = get_option('nwwp_content_mode', 'excerpt');
+        // Obtener categorías del mapeo (solo las que el cliente necesita en su web)
+        $categorias_api = !empty($category_map) ? array_keys($category_map) : array();
 
         $total_importados = 0;
-        $total_saltados   = 0;
-        $errores          = array();
+        $total_saltados = 0;
+        $errores = array();
 
-        if (!empty($category_map) && is_array($category_map)) {
-            foreach ($category_map as $api_category => $wp_cat_id) {
-                $articulos = $api_client->get_news($api_category, false, $limit_por_cat);
-
+        if (!empty($categorias_api)) {
+            // Sincronizar por cada categoría que el cliente maneja
+            foreach ($categorias_api as $api_category) {
+                $articulos = $api_client->sync_articles($api_category, $limit);
                 if (is_wp_error($articulos)) {
                     $errores[] = "Categoría {$api_category}: " . $articulos->get_error_message();
                     continue;
                 }
-
-                if (empty($articulos) || !is_array($articulos)) {
+                if (empty($articulos)) {
                     continue;
                 }
 
                 $resultados = $importer->import_multiple($articulos, array(
-                    'content_mode'  => $content_mode,
-                    'category_map'  => $category_map,
+                    'content_mode' => $content_mode,
+                    'category_map' => $category_map,
                 ));
-
                 $total_importados += $resultados['importados'];
-                $total_saltados   += $resultados['saltados'];
+                $total_saltados += $resultados['saltados'];
                 foreach ($resultados['errores'] as $err) {
                     $errores[] = "Categoría {$api_category}: " . $err['error'];
                 }
             }
         } else {
-            $articulos = $api_client->get_news('', false, $limit_por_cat);
-
-            if (!is_wp_error($articulos) && !empty($articulos) && is_array($articulos)) {
+            // Sin mapeo: traer artículos de todas las categorías
+            $articulos = $api_client->sync_articles('', $limit);
+            if (!is_wp_error($articulos) && !empty($articulos)) {
                 $resultados = $importer->import_multiple($articulos, array(
                     'content_mode' => $content_mode,
                 ));
                 $total_importados = $resultados['importados'];
-                $total_saltados   = $resultados['saltados'];
-                $errores           = array_map(function ($e) {
+                $total_saltados = $resultados['saltados'];
+                $errores = array_map(function ($e) {
                     return $e['error'];
                 }, $resultados['errores']);
             }
         }
 
         $this->registrar_log(
-            'hourly_import',
+            'sync',
             empty($errores) ? 'success' : 'partial',
             sprintf(
-                'Importación horaria: %d importados, %d duplicados, %d errores',
+                'Sincronización: %d importados, %d duplicados, %d errores',
                 $total_importados,
                 $total_saltados,
                 count($errores)
@@ -226,173 +132,57 @@ class nwwp_Cron
         );
     }
 
+    /**
+     * Ejecuta sincronización inmediata (llamada externa o desde guardar settings)
+     */
+    public static function ejecutar_sincronizacion_inmediata()
+    {
+        $cron = new self();
+        $cron->ejecutar_sincronizacion(true);
+    }
+
+    /**
+     * Obtiene el límite de artículos según el plan
+     */
+    private function obtener_limite_plan()
+    {
+        $plan = get_option('nwwp_detected_plan', 'basic');
+        $configurado = intval(get_option('nwwp_posts_per_hour', 5));
+
+        if ('basic' === $plan) {
+            return min($configurado, 2);
+        } elseif ('pro' === $plan) {
+            return min($configurado, 50);
+        } elseif ('business' === $plan) {
+            return min($configurado, 100);
+        }
+        return max(1, $configurado);
+    }
+
     private function obtener_mapeo_categorias()
     {
         $map = get_option('nwwp_category_map', array());
-        if (!is_array($map)) {
-            $map = array();
-        }
-        return $map;
+        return is_array($map) ? $map : array();
     }
 
     private function registrar_log($accion, $resultado, $mensaje)
     {
         global $wpdb;
-
         $tabla = $wpdb->prefix . 'nwwp_activity_log';
-
         $wpdb->insert(
             $tabla,
             array(
-                'action'     => sanitize_text_field($accion),
-                'result'     => sanitize_text_field($resultado),
-                'message'    => sanitize_text_field($mensaje),
-                'timestamp'  => current_time('mysql'),
+                'action'    => sanitize_text_field($accion),
+                'result'    => sanitize_text_field($resultado),
+                'message'   => sanitize_text_field($mensaje),
+                'timestamp' => current_time('mysql'),
             ),
             array('%s', '%s', '%s', '%s')
         );
     }
 
-    /**
-     * Ejecutar auto-publicación programada
-     * 
-     * Llama al scraper para obtener artículos nuevos y los publica en WordPress
-     */
-    public function ejecutar_auto_publicacion($force = false)
-    {
-        // Verificar si la auto-publicación está habilitada
-        $auto_publish_enabled = get_option('nwwp_auto_publish_enabled', false);
-        if (!$auto_publish_enabled && !$force) {
-            return;
-        }
-
-        $api_key = get_option('nwwp_api_key', '');
-        if (empty($api_key)) {
-            $this->registrar_log(
-                'auto_publish',
-                'error',
-                'No se puede ejecutar auto-publicación: API Key no configurada'
-            );
-            return;
-        }
-
-        // Obtener categoría de publicación
-        $publish_category = get_option('nwwp_auto_publish_category', '');
-
-        // Obtener modo de contenido
-        $content_mode = get_option('nwwp_content_mode', 'excerpt');
-
-        // Llamar a la API para obtener artículos nuevos
-        $api_url = NWWP_API_URL;
-        $fetch_url = add_query_arg(
-            array(
-                'api_key' => $api_key,
-                'limit' => 5, // Obtener máximo 5 artículos por ejecución
-            ),
-            trailingslashit($api_url) . 'api/articles/fetch'
-        );
-
-        $response = wp_remote_post($fetch_url, array(
-            'timeout' => 120, // 2 minutos de timeout para scraping
-            'sslverify' => true,
-        ));
-
-        $articles_fetched = 0;
-
-        if (is_wp_error($response)) {
-            $this->registrar_log(
-                'auto_publish',
-                'warning',
-                'Error al conectar con la API de scraping bajo demanda: ' . $response->get_error_message() . '. Se intentará obtener artículos ya existentes en Byline.'
-            );
-        } else {
-            $status_code = wp_remote_retrieve_response_code($response);
-            if ($status_code !== 200) {
-                $this->registrar_log(
-                    'auto_publish',
-                    'warning',
-                    'API de scraping respondió con código: ' . $status_code . '. Se intentará obtener artículos ya existentes en Byline.'
-                );
-            } else {
-                $body = wp_remote_retrieve_body($response);
-                $data = json_decode($body, true);
-                if (isset($data['success']) && $data['success']) {
-                    $articles_fetched = isset($data['articles_fetched']) ? intval($data['articles_fetched']) : 0;
-                } else {
-                    $this->registrar_log(
-                        'auto_publish',
-                        'warning',
-                        'API respondió con error en scraping: ' . ($data['message'] ?? 'Error desconocido') . '. Se intentará obtener artículos ya existentes en Byline.'
-                    );
-                }
-            }
-        }
-
-        // Definir cuántos artículos importar. Si se obtuvo scrapeados, usamos esa cantidad.
-        // Si no se obtuvieron nuevos, intentamos traer hasta 5 artículos pendientes que ya estén en la base de datos de Byline.
-        $limit_to_fetch = $articles_fetched > 0 ? $articles_fetched : 5;
-
-        // Importar los artículos obtenidos
-        $api_client = new nwwp_API_Client();
-        $author_manager = new nwwp_Author_Manager();
-        $importer = new nwwp_Importer($api_client, $author_manager);
-
-        // Obtener artículos recientes de la API para importar
-        $articulos = $api_client->get_news('', false, $limit_to_fetch);
-
-        if (is_wp_error($articulos) || empty($articulos)) {
-            $this->registrar_log(
-                'auto_publish',
-                'info',
-                'No se encontraron artículos nuevos ni pendientes en Byline para importar.'
-            );
-            return;
-        }
-
-        // Preparar mapeo de categorías si se especificó
-        $category_map = array();
-        if (!empty($publish_category)) {
-            // Mapear todas las categorías de API a la categoría seleccionada
-            $category_map = array(
-                '*' => absint($publish_category),
-            );
-        }
-
-        // Importar artículos
-        $resultados = $importer->import_multiple($articulos, array(
-            'content_mode' => $content_mode,
-            'category_map' => $category_map,
-        ));
-
-        $this->registrar_log(
-            'auto_publish',
-            'success',
-            sprintf(
-                'Auto-publish: %d artículos nuevos scrapeados, se procesaron %d pendientes de Byline. Resultado: %d importados, %d duplicados, %d errores',
-                $articles_fetched,
-                count($articulos),
-                $resultados['importados'],
-                $resultados['saltados'],
-                count($resultados['errores'])
-            )
-        );
-    }
-
-    /**
-     * Ejecutar auto-publicación inmediatamente (al guardar configuración)
-     * 
-     * Esta función se llama de forma síncrona después de guardar los ajustes
-     * para iniciar la publicación de inmediato
-     */
-    public static function ejecutar_auto_publicacion_inmediata()
-    {
-        $cron_instance = new self();
-        $cron_instance->ejecutar_auto_publicacion(true);
-    }
-
     public static function limpiar_eventos_cron()
     {
-        wp_clear_scheduled_hook(self::HOOK_BREAKING_NEWS);
-        wp_clear_scheduled_hook(self::HOOK_HOURLY_IMPORT);
+        wp_clear_scheduled_hook(self::HOOK_SYNC);
     }
 }

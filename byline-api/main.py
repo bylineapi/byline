@@ -265,6 +265,73 @@ async def fetch_articles(
 
     raise HTTPException(status_code=401, detail="API key inválida")
 
+
+@app.post("/api/articles/sync", response_model=dict)
+async def sync_articles(
+    api_key: str = Query(...),
+    categories: Optional[str] = Query(None, description="Categorías separadas por coma"),
+    limit: int = Query(10, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+):
+    """Endpoint para que el plugin WordPress sincronice artículos.
+    NO ejecuta scraping — solo devuelve artículos pendientes no entregados
+    filtrados por las categorías que el cliente necesita en su web."""
+    from auth import verify_api_key
+
+    result = await db.execute(select(Client))
+    clients = result.scalars().all()
+
+    for client in clients:
+        if verify_api_key(api_key, client.api_key):
+            if not client.is_active:
+                raise HTTPException(status_code=403, detail="Cliente inactivo")
+
+            plan = SUSCRIPTION_PLANS[client.plan.value]
+
+            categorias_solicitadas = None
+            if categories:
+                categorias_solicitadas = [c.strip() for c in categories.split(",") if c.strip()]
+
+            delivered_subquery = (
+                select(ClientArticle.article_id)
+                .where(ClientArticle.client_id == client.id)
+            )
+
+            statuses = [
+                ArticleStatusEnum.pending_normal,
+                ArticleStatusEnum.pending_breaking,
+            ]
+
+            query = (
+                select(Article)
+                .options(joinedload(Article.source))
+                .where(Article.status.in_(statuses))
+                .where(Article.id.not_in(delivered_subquery))
+                .order_by(desc(Article.impact_score), desc(Article.created_at))
+                .limit(limit)
+            )
+
+            if categorias_solicitadas:
+                query = query.where(Article.category.in_(categorias_solicitadas))
+
+            result = await db.execute(query)
+            articulos = result.scalars().all()
+
+            await _marcar_articulos_entregados(db, client.id, articulos)
+
+            if not plan["full_content"]:
+                for a in articulos:
+                    a.content = None
+
+            return {
+                "success": True,
+                "articles": [ArticleOut.model_validate(a) for a in articulos],
+                "count": len(articulos)
+            }
+
+    raise HTTPException(status_code=401, detail="API key inválida")
+
+
 @app.get("/health")
 async def health_check(db: AsyncSession = Depends(get_db)):
     """Endpoint de verificación de salud del servicio y conexión a Neon."""

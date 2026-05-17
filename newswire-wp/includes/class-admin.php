@@ -28,6 +28,7 @@ class nwwp_Admin
         add_action('wp_ajax_nwwp_get_sources', array($this, 'ajax_obtener_fuentes'));
         add_action('wp_ajax_nwwp_add_source', array($this, 'ajax_agregar_fuente'));
         add_action('wp_ajax_nwwp_delete_source', array($this, 'ajax_eliminar_fuente'));
+        add_action('wp_ajax_nwwp_ajax_sync', array($this, 'ajax_sync'));
         add_action('admin_enqueue_scripts', array($this, 'cargar_assets'));
         add_filter('plugin_action_links_' . plugin_basename(nwwp_PLUGIN_DIR . 'newswire-wp.php'), array($this, 'agregar_enlace_ajustes'));
     }
@@ -452,7 +453,7 @@ class nwwp_Admin
         if (!empty($api_key)) {
             error_log('NewsWire WP: Ejecutando auto-publicacion/importacion inmediata...');
             try {
-                nwwp_Cron::ejecutar_auto_publicacion_inmediata();
+                nwwp_Cron::ejecutar_sincronizacion_inmediata();
                 error_log('NewsWire WP: Auto-publicacion/importacion inmediata ejecutada exitosamente');
                 $auto_publish_triggered = true;
             } catch (Exception $e) {
@@ -718,5 +719,18 @@ class nwwp_Admin
         }
 
         wp_send_json_success(array('message' => 'Fuente eliminada.'));
+    }
+
+    public function ajax_sync()
+    {
+        check_ajax_referer('nwwp_sync_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Sin permisos.'));
+        }
+
+        nwwp_Cron::ejecutar_sincronizacion_inmediata();
+
+        wp_send_json_success(array('message' => 'Sincronización ejecutada.'));
     }
 }
