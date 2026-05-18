@@ -51,7 +51,7 @@ def _extraer_con_newspaper(url: str, html: Optional[str] = None) -> dict:
             html = obtener_html_bunker(url)
         
         if html:
-            article.set_html(html)
+            article.download(input_html=html)
         else:
             article.download()
             

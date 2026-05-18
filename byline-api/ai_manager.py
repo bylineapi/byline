@@ -63,7 +63,7 @@ async def mark_key_cooldown(key_id: int):
 
 async def call_gemini_api(api_key: str, prompt: str) -> Optional[str]:
     """Llama a la API oficial de Google Gemini 1.5 Flash."""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
     body = {
         "contents": [{
@@ -131,7 +131,7 @@ async def call_openrouter_api(api_key: str, prompt: str) -> Optional[str]:
         "Content-Type": "application/json"
     }
     body = {
-        "model": "meta-llama/llama-3-8b-instruct:free",
+        "model": "google/gemma-2-9b-it:free",
         "messages": [
             {"role": "user", "content": prompt}
         ],
